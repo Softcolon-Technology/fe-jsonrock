@@ -559,7 +559,7 @@ export default function Home({ initialRecord }: HomeProps) {
             {/* Header Icons: Github & Theme */}
             <div className="hidden sm:flex items-center">
               <a
-                href="https://github.com/darshansoftcolon-dev/json-crack-demo"
+                href="https://github.com/Softcolon-Technology/jsonrock"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors flex items-center justify-center"
