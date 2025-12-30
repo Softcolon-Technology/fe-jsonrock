@@ -10,6 +10,7 @@ const layoutOptions = {
     "elk.layered.spacing.nodeNodeBetweenLayers": "100",
     "elk.spacing.nodeNode": "80", // Vertical gap
     "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+    "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
 };
 
 export type GraphNodeData = {
