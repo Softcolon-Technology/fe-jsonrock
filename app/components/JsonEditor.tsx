@@ -9,12 +9,13 @@ interface JsonEditorProps {
     readOnly?: boolean;
     className?: string;
     options?: editor.IStandaloneEditorConstructionOptions;
+    language?: string;
 }
 
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
-const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onChange, readOnly = false, className, options: customOptions }) => {
+const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onChange, readOnly = false, className, options: customOptions, language = "json" }) => {
     const { theme } = useTheme();
     const editorRef = React.useRef<any>(null);
     const monacoRef = React.useRef<any>(null);
@@ -89,6 +90,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onCh
             <Editor
                 height="100%"
                 defaultLanguage="json"
+                language={language}
                 defaultValue={defaultValue}
                 onChange={handleEditorChange}
                 // Default theme prop is initial only, effect handles updates

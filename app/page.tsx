@@ -21,7 +21,8 @@ import {
   ArrowRight,
   AlertCircle,
   UploadCloud,
-  X
+  X,
+  MessageSquarePlus
 } from "lucide-react";
 
 import { getJsonParseError } from "@/lib/json-error";
@@ -42,6 +43,9 @@ import TreeExplorer from "./components/TreeExplorer";
 import { getLayoutedElements } from "@/lib/graph-layout";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/useDebounce";
+import dynamic from "next/dynamic";
+
+const RichTextEditor = dynamic(() => import("./components/RichTextEditor"), { ssr: false });
 
 
 
@@ -50,6 +54,7 @@ type SerializedShareLinkRecord = Omit<ShareLinkRecord, "createdAt" | "_id"> & {
   createdAt: string;
   _id?: string;
   accessType?: ShareAccessType;
+  type?: "json" | "text";
 };
 
 function ThemeToggle() {
@@ -71,12 +76,13 @@ function ThemeToggle() {
 
 interface HomeProps {
   initialRecord?: SerializedShareLinkRecord;
+  featureMode?: "json" | "text";
 }
 
-export default function Home({ initialRecord }: HomeProps) {
+export default function Home({ initialRecord, featureMode = "json" }: HomeProps) {
   const [jsonInput, setJsonInput] = useState<string>(
     initialRecord?.json ||
-    '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}'
+    (featureMode === 'text' ? 'Type your text here...' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}')
   );
   const [parsedJson, setParsedJson] = useState<any>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -84,6 +90,9 @@ export default function Home({ initialRecord }: HomeProps) {
   const [activeTab, setActiveTab] = useState<"visualize" | "tree" | "formatter">(
     initialRecord?.mode || "visualize"
   );
+  const [type, setType] = useState<"json" | "text">(initialRecord?.type || featureMode);
+  const [fontSize, setFontSize] = useState(14); // Text Mode Font Size
+
   const [isValid, setIsValid] = useState(true);
   const [layouting, setLayouting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -97,8 +106,6 @@ export default function Home({ initialRecord }: HomeProps) {
   // Formatter State moved up to group with others or left here, but socket logic removed from here
   const [tabSize, setTabSize] = useState<string>("2");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-
 
   // Share State
   const [slug, setSlug] = useState<string | null>(initialRecord?.slug || null);
@@ -204,7 +211,7 @@ export default function Home({ initialRecord }: HomeProps) {
           socket.emit("code-change", { slug: slugRef.current, newCode: code });
         }
       }
-    }, 300);
+    }, 100);
   }, []); // ID IS STABLE NOW
 
   // Socket Effect
@@ -281,6 +288,7 @@ export default function Home({ initialRecord }: HomeProps) {
       setRemoteCode({ code: data.json, nonce: Date.now() }); // Force Editor Update
       setActiveTab(data.mode);
       setIsPrivate(data.isPrivate);
+      setType(data.type || "json");
       setAccessType(data.accessType || "viewer");
       // If we unlocked successfully, we essentially have access.
       // If the link is "viewer" only, we are viewers?
@@ -317,8 +325,12 @@ export default function Home({ initialRecord }: HomeProps) {
   };
 
   // New Button Handler
-  const handleNew = async () => {
-    setJsonInput('{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}');
+  const handleNew = async (specificType?: 'json' | 'text') => {
+    const targetType = (typeof specificType === 'string') ? specificType : type;
+    const isText = targetType === 'text';
+    const initialContent = isText ? '' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
+
+    setJsonInput(initialContent);
     setSlug(null);
     setIsPrivate(false);
     setIsPersistedPrivate(false);
@@ -326,7 +338,7 @@ export default function Home({ initialRecord }: HomeProps) {
     setCanEdit(true); // New file is always editable
     setPassword("");
     setRemoteCode({
-      code: '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}',
+      code: initialContent,
       nonce: Date.now()
     });
 
@@ -337,17 +349,10 @@ export default function Home({ initialRecord }: HomeProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          json: '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}',
+          json: initialContent,
           mode: activeTab,
-          accessType: "editor" // Initial creation is always editor capable? Actually creation doesn't set accessType unless speicify.
-          // Let's Default to 'viewer' for public links if not specified? 
-          // Requirements say "accessType dropdown... default viewer".
-          // But "New" button creates a record implicitly.
-          // Let's default to "public viewer" for auto-created links? Or "public editor"?
-          // Typically "New" => "Unsaved".
-          // If we Autosave, let's use 'editor' so the Creator can edit it.
-          // Wait, 'handleNew' calls POST /api/share.
-          // Let's pass accessType: 'editor' so the creator doesn't lock themselves out immediately.
+          type: targetType,
+          accessType: "editor"
         })
       });
       const data = await res.json();
@@ -356,8 +361,10 @@ export default function Home({ initialRecord }: HomeProps) {
         setAccessType(data.accessType || "editor");
         setCanEdit(true); // Implicitly editor of new file
         setIsOwner(true);
+        setType(data.type || targetType);
         addOwnership(data.slug);
-        window.history.pushState({}, "", `/share/${data.slug}`);
+        const route = (data.type || targetType) === 'text' ? '/share/text/' : '/share/';
+        window.history.pushState({}, "", `${route}${data.slug}`);
       }
     } catch (e) {
       console.error("Failed to create new record", e);
@@ -367,11 +374,11 @@ export default function Home({ initialRecord }: HomeProps) {
   };
 
   // Save Button Handler
-  const handleSave = async () => {
+  const handleSave = async (silent = false) => {
     if (!slug) return;
 
     if (isPrivate && password.length < 4) {
-      showAlert("Invalid Password", "Password must be at least 4 characters for private links.", "error");
+      if (!silent) showAlert("Invalid Password", "Password must be at least 4 characters for private links.", "error");
       return;
     }
 
@@ -385,20 +392,21 @@ export default function Home({ initialRecord }: HomeProps) {
           mode: activeTab,
           isPrivate,
           accessType, // Preserve current access settings
-          password: isPrivate ? password : undefined
+          password: isPrivate ? password : undefined,
+          type
         })
       });
 
       if (res.ok) {
         if (isPrivate) setIsPersistedPrivate(true);
-        showAlert("Saved Successfully", "Your changes have been saved.", "success");
+        if (!silent) showAlert("Saved Successfully", "Your changes have been saved.", "success");
       } else {
         const err = await res.json();
-        showAlert("Save Failed", err.error || "An error occurred while saving.", "error");
+        if (!silent) showAlert("Save Failed", err.error || "An error occurred while saving.", "error");
       }
     } catch (e) {
       console.error("Failed to save", e);
-      showAlert("Save Failed", "Network error or server unreachable.", "error");
+      if (!silent) showAlert("Save Failed", "Network error or server unreachable.", "error");
     } finally {
       setIsSaving(false);
     }
@@ -506,7 +514,8 @@ export default function Home({ initialRecord }: HomeProps) {
           mode: activeTab,
           isPrivate: settings.isPrivate,
           accessType: settings.accessType,
-          password: settings.password
+          password: settings.password,
+          type
         })
       });
 
@@ -520,7 +529,8 @@ export default function Home({ initialRecord }: HomeProps) {
       if (newSlug !== slug) {
         setSlug(newSlug);
         addOwnership(newSlug); // Mark as owner of new/updated slug
-        window.history.pushState({}, "", `/share/${newSlug}`);
+        const route = type === 'text' ? '/share/text/' : '/share/';
+        window.history.pushState({}, "", `${route}${newSlug}`);
       }
 
       // Update local state
@@ -530,7 +540,8 @@ export default function Home({ initialRecord }: HomeProps) {
       if (settings.password) setPassword(settings.password);
 
       // Copy Link
-      const link = `${window.location.origin}/share/${newSlug}`;
+      const route = type === 'text' ? '/share/text/' : '/share/';
+      const link = `${window.location.origin}${route}${newSlug}`;
       let message = "Settings saved and link copied to clipboard!";
       try {
         await navigator.clipboard.writeText(link);
@@ -565,6 +576,11 @@ export default function Home({ initialRecord }: HomeProps) {
     }
 
     try {
+      if (type === 'text') {
+        setIsValid(true);
+        setErrorMessage(null);
+        return;
+      }
       const parsed = JSON.parse(debouncedJsonInput);
       setParsedJson(parsed);
       setIsValid(true);
@@ -585,6 +601,18 @@ export default function Home({ initialRecord }: HomeProps) {
       }
     }
   }, [debouncedJsonInput, activeTab]);
+
+  // Debounce for Auto-Save (2 seconds)
+  const debouncedSaveContent = useDebounce(jsonInput, 2000);
+
+  // Auto-Save Effect
+  useEffect(() => {
+    // Only auto-save in Text Mode, if editable, and has slug
+    if (type === 'text' && slug && canEdit && !isLocked) {
+      // Prevent double calls or saving while already saving (though guard handles it)
+      handleSave(true);
+    }
+  }, [debouncedSaveContent]);
 
   const handleCopy = () => {
     // Copy the formatted output, not the input, if we are in format tab
@@ -611,17 +639,17 @@ export default function Home({ initialRecord }: HomeProps) {
   const [mobileTab, setMobileTab] = useState<"editor" | "viewer">("editor");
 
   return (
-    <div className="flex h-[100dvh] w-screen bg-gray-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-300 font-sans overflow-hidden">
+    <div className={cn("flex h-[100dvh] w-screen bg-gray-50 text-zinc-800 font-sans overflow-hidden", type !== 'text' && "dark:bg-zinc-950 dark:text-zinc-300")}>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Top Bar */}
-        <header className="h-14 border-b border-zinc-200 dark:border-zinc-900 flex items-center justify-between px-2 lg:px-6 bg-white dark:bg-zinc-950 shrink-0">
+        <header className={cn("h-14 border-b border-zinc-200 flex items-center justify-between px-2 lg:px-6 bg-white shrink-0", type !== 'text' && "dark:border-zinc-900 dark:bg-zinc-950")}>
           <div className="flex items-center gap-2 sm:gap-3">
             <a href={slug ? `/share/${slug}` : '/'} className="flex items-center hover:opacity-80 transition-opacity" title="Refresh Page">
-              <img src="/jsonrock-dark.svg" alt="JSONROCK" className="h-5 sm:h-6 w-auto dark:hidden block" />
-              <img src="/jsonrock-light.svg" alt="JSONROCK" className="h-5 sm:h-6 w-auto hidden dark:block" />
+              <img src="/jsonrock-dark.svg" alt="JSONROCK" className={cn("h-5 sm:h-6 w-auto", type !== 'text' ? "block dark:hidden" : "block")} />
+              <img src="/jsonrock-light.svg" alt="JSONROCK" className={cn("h-5 sm:h-6 w-auto", type !== 'text' ? "hidden dark:block" : "hidden")} />
             </a>
             {!isValid && (
               <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] sm:text-xs font-medium whitespace-nowrap">
@@ -634,37 +662,66 @@ export default function Home({ initialRecord }: HomeProps) {
             {/* Upload Button */}
             <button
               onClick={() => setIsUploadOpen(true)}
-              className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 transition-colors text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+              className={cn(
+                "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 border border-zinc-200 transition-colors text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200",
+                type !== 'text' && "dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              )}
               title="Upload JSON"
             >
               <UploadCloud size={14} />
               <span className="hidden lg:inline">Upload</span>
             </button>
 
-            {/* New Button */}
+            {/* New JSON */}
             <button
-              onClick={handleNew}
-              className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 transition-colors text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
-              title="Create New"
+              onClick={() => handleNew('json')}
+              className={cn(
+                "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 border border-zinc-200 transition-colors text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200",
+                type !== 'text' && "dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              )}
+              title="Create New JSON"
             >
               <FolderPlus size={14} />
-              <span className="hidden lg:inline">New</span>
+              <span className="hidden lg:inline">New JSON</span>
+            </button>
+
+            {/* New Text */}
+            <button
+              onClick={() => handleNew('text')}
+              className={cn(
+                "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 border border-zinc-200 transition-colors text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200",
+                type !== 'text' && "dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              )}
+              title="Create New Text Chat"
+            >
+              <MessageSquarePlus size={14} />
+              <span className="hidden lg:inline">New Text</span>
             </button>
 
             {/* Save Button */}
-            <button
-              onClick={handleSave}
-              disabled={!slug || isSaving}
-              className={cn(
-                "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium border transition-colors",
-                !slug
-                  ? "bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600 border-zinc-200 dark:border-zinc-800 cursor-not-allowed"
-                  : "bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-lg shadow-blue-900/20"
-              )}
-            >
-              <Save size={14} />
-              <span className="hidden lg:inline">{isSaving ? "Saving..." : "Save"}</span>
-            </button>
+            {type === 'text' ? (
+              <div className={cn("flex items-center gap-2 px-3 text-xs font-medium text-zinc-500 select-none", type !== 'text' && "dark:text-zinc-400")}>
+                {isSaving ? (
+                  <span>Saving...</span>
+                ) : (
+                  <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Saved</span>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => handleSave(false)}
+                disabled={!slug || isSaving}
+                className={cn(
+                  "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium border transition-colors",
+                  !slug
+                    ? "bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600 border-zinc-200 dark:border-zinc-800 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-lg shadow-blue-900/20"
+                )}
+              >
+                <Save size={14} />
+                <span className="hidden lg:inline">{isSaving ? "Saving..." : "Save"}</span>
+              </button>
+            )}
 
             <button
               onClick={() => setIsShareOpen(true)}
@@ -676,14 +733,14 @@ export default function Home({ initialRecord }: HomeProps) {
               <span className="hidden lg:inline">Share</span>
             </button>
 
-            <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-0.5 sm:mx-1" />
+            <div className={cn("h-6 w-px bg-zinc-200 mx-0.5 sm:mx-1", type !== 'text' && "dark:bg-zinc-800")} />
 
             {/* Header Icons: Github */}
             <a
               href="https://github.com/Softcolon-Technology/jsonrock"
               target="_blank"
               rel="noopener noreferrer"
-              className="p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors flex items-center justify-center"
+              className={cn("p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-700 transition-colors flex items-center justify-center", type !== 'text' && "dark:hover:text-zinc-200")}
               title="View Source on GitHub"
             >
               <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -691,7 +748,7 @@ export default function Home({ initialRecord }: HomeProps) {
               </svg>
             </a>
 
-            <ThemeToggle />
+            {type !== 'text' && <ThemeToggle />}
           </div>
         </header>
 
@@ -702,70 +759,88 @@ export default function Home({ initialRecord }: HomeProps) {
           <div
             style={{ "--left-panel-width": `${leftWidth}%` } as React.CSSProperties}
             className={cn(
-              "border-b lg:border-b-0 lg:border-r border-zinc-200 dark:border-zinc-900 flex flex-col bg-white dark:bg-[#09090b] h-full",
-              "w-full lg:w-[var(--left-panel-width)] lg:min-w-[300px]",
+              "border-b lg:border-b-0 lg:border-r border-zinc-200 flex flex-col bg-white h-full",
+              type !== 'text' && "dark:border-zinc-900 dark:bg-[#09090b]",
+              type === 'text' ? "w-full" : "w-full lg:w-[var(--left-panel-width)] lg:min-w-[300px]",
+              // Mobile visibility toggle
               // Mobile visibility toggle
               mobileTab === 'editor' ? 'flex' : 'hidden lg:flex'
             )}>
-            <div className="flex-1 relative">
-              <JsonEditor
-                className="pt-14 lg:pt-0"
-                defaultValue={jsonInput} // Initial Load Only
-                remoteValue={remoteCode} // Updates Only
-                onChange={handleJsonChange}
-                readOnly={!canEdit}
-                options={{
-                  padding: { top: 16, bottom: 100 } // Ensure last lines are visible above floating alert
-                }}
-              />
+            {type === 'text' ? (
+              <div className="flex-1 h-full relative">
+                <RichTextEditor
+                  content={jsonInput}
+                  onChange={handleJsonChange}
+                  readOnly={!canEdit}
+                  remoteContent={remoteCode?.code}
+                  forceLight={true}
+                />
+              </div>
+            ) : (
+              <div className="flex-1 relative flex flex-col h-full">
+                <div className="flex-1 relative">
+                  <JsonEditor
+                    className="pt-14 lg:pt-0"
+                    defaultValue={jsonInput} // Initial Load Only
+                    remoteValue={remoteCode} // Updates Only
+                    onChange={handleJsonChange}
+                    readOnly={!canEdit}
+                    options={{
+                      padding: { top: 16, bottom: 100 } // Ensure last lines are visible above floating alert
+                    }}
+                  />
 
-
-              {/* Error Alert Overlay */}
-              {!isValid && errorMessage && (
-                <div className="absolute bottom-4 left-4 right-4 lg:bottom-6 lg:left-8 lg:right-8 z-30 animate-in fade-in slide-in-from-bottom-2">
-                  <div className="bg-white/95 dark:bg-zinc-900/95 border border-red-200 dark:border-red-900/50 backdrop-blur-md p-3 lg:p-4 rounded-xl shadow-xl flex items-start gap-3 lg:gap-4 ring-1 ring-black/5 dark:ring-white/5">
-                    <div className="p-1.5 lg:p-2 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/30 rounded-lg text-red-600 dark:text-red-500 shrink-0 shadow-sm">
-                      <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2 lg:gap-4">
-                        <h4 className="text-xs lg:text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                          Invalid JSON
-                        </h4>
-                        {errorMessage.line && (
-                          <span className="text-[10px] font-mono font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 px-1.5 lg:px-2 py-0.5 rounded-full whitespace-nowrap shadow-sm">
-                            Line {errorMessage.line}
-                          </span>
-                        )}
+                  {/* Error Alert Overlay */}
+                  {!isValid && errorMessage && (
+                    <div className="absolute bottom-4 left-4 right-4 lg:bottom-6 lg:left-8 lg:right-8 z-30 animate-in fade-in slide-in-from-bottom-2">
+                      <div className="bg-white/95 dark:bg-zinc-900/95 border border-red-200 dark:border-red-900/50 backdrop-blur-md p-3 lg:p-4 rounded-xl shadow-xl flex items-start gap-3 lg:gap-4 ring-1 ring-black/5 dark:ring-white/5">
+                        <div className="p-1.5 lg:p-2 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/30 rounded-lg text-red-600 dark:text-red-500 shrink-0 shadow-sm">
+                          <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 lg:gap-4">
+                            <h4 className="text-xs lg:text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                              Invalid JSON
+                            </h4>
+                            {errorMessage.line && (
+                              <span className="text-[10px] font-mono font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 px-1.5 lg:px-2 py-0.5 rounded-full whitespace-nowrap shadow-sm">
+                                Line {errorMessage.line}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] lg:text-xs text-zinc-600 dark:text-zinc-400 mt-1 lg:mt-1.5 font-mono break-words leading-relaxed border-l-2 border-red-200 dark:border-red-900/50 pl-2 lg:pl-3">
+                            {errorMessage.message}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-[11px] lg:text-xs text-zinc-600 dark:text-zinc-400 mt-1 lg:mt-1.5 font-mono break-words leading-relaxed border-l-2 border-red-200 dark:border-red-900/50 pl-2 lg:pl-3">
-                        {errorMessage.message}
-                      </p>
                     </div>
+                  )}
+
+                  {/* Go to View Button (Mobile Only) */}
+                  <div className="lg:hidden absolute top-2 right-14 z-20">
+                    <button
+                      onClick={() => setMobileTab("viewer")}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-full shadow-lg shadow-emerald-900/20 font-medium text-xs hover:bg-emerald-500 transition-transform active:scale-95 backdrop-blur-sm opacity-90 hover:opacity-100"
+                    >
+                      Go to View
+                      <ArrowRight size={14} />
+                    </button>
                   </div>
                 </div>
-              )}
-
-              {/* Go to View Button (Mobile Only) */}
-              <div className="lg:hidden absolute top-2 right-14 z-20">
-                <button
-                  onClick={() => setMobileTab("viewer")}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-full shadow-lg shadow-emerald-900/20 font-medium text-xs hover:bg-emerald-500 transition-transform active:scale-95 backdrop-blur-sm opacity-90 hover:opacity-100"
-                >
-                  Go to View
-                  <ArrowRight size={14} />
-                </button>
               </div>
-            </div>
+            )}
           </div>
+
 
           {/* Resizer Handle */}
-          <div
-            className={`hidden lg:flex w-1 bg-transparent cursor-col-resize z-40 items-center justify-center transition-colors`}
-            onMouseDown={startResizing}
-          >
-            {/* Optional Grip Icon or dots */}
-          </div>
+          {type !== 'text' && (
+            <div
+              className={`hidden lg:flex w-1 bg-transparent cursor-col-resize z-40 items-center justify-center transition-colors`}
+              onMouseDown={startResizing}
+            >
+              {/* Optional Grip Icon or dots */}
+            </div>
+          )}
 
           {/* View Pane (Right/Bottom) */}
           <div
@@ -774,7 +849,9 @@ export default function Home({ initialRecord }: HomeProps) {
               "bg-gray-50 dark:bg-[#050505] relative overflow-hidden h-full",
               "w-full lg:w-[var(--right-panel-width)]",
               // Mobile visibility toggle
-              mobileTab === 'viewer' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
+              // Mobile visibility toggle
+              // Mobile visibility toggle
+              mobileTab === 'viewer' ? 'flex flex-col' : (type === 'text' ? 'hidden' : 'hidden lg:flex lg:flex-col')
             )}>
 
             {/* Back to Editor Button (Mobile Only) */}
@@ -918,74 +995,87 @@ export default function Home({ initialRecord }: HomeProps) {
       />
 
       {/* Upload Modal */}
-      {isUploadOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                <UploadCloud size={20} className="text-emerald-500" />
-                Upload JSON File
-              </h3>
-              <button
-                onClick={() => setIsUploadOpen(false)}
-                className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div
-                className="p-8 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-lg flex flex-col items-center justify-center text-center hover:border-emerald-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors cursor-pointer"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <UploadCloud size={32} className="text-zinc-400 mb-2" />
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                  Click to select file
-                </p>
-                <p className="text-xs text-zinc-500 mt-1">
-                  .json files only
-                </p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-              </div>
-
-              {isUploading && (
-                <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-500 animate-pulse">
-                  <span>Uploading and processing...</span>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2">
+      {
+        isUploadOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <UploadCloud size={20} className="text-emerald-500" />
+                  Upload JSON File
+                </h3>
                 <button
                   onClick={() => setIsUploadOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-                  disabled={isUploading}
+                  className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
                 >
-                  Cancel
+                  <X size={20} />
                 </button>
+              </div>
+
+              <div className="space-y-4">
+                <div
+                  className="p-8 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-lg flex flex-col items-center justify-center text-center hover:border-emerald-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors cursor-pointer"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <UploadCloud size={32} className="text-zinc-400 mb-2" />
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    Click to select file
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    .json files only
+                  </p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                </div>
+
+                {isUploading && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-500 animate-pulse">
+                    <span>Uploading and processing...</span>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => setIsUploadOpen(false)}
+                    className="px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                    disabled={isUploading}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Unlock Modal */}
       {
         isLocked && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="w-full max-w-md space-y-4 rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
+          <div className={cn(
+            "fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4",
+            type === 'text' ? "bg-white/80" : "bg-white/80 dark:bg-black/80"
+          )}>
+            <div className={cn(
+              "w-full max-w-md space-y-4 rounded-xl border p-6 shadow-2xl",
+              type === 'text' ? "bg-white border-zinc-200" : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800"
+            )}>
               <div className="flex flex-col items-center gap-2 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400">
+                <div className={cn(
+                  "flex h-12 w-12 items-center justify-center rounded-full border",
+                  type === 'text'
+                    ? "bg-zinc-100 border-zinc-200 text-zinc-500"
+                    : "bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400"
+                )}>
                   <Lock size={20} />
                 </div>
-                <h2 className="text-lg font-semibold text-zinc-100">Password Required</h2>
-                <p className="text-sm text-zinc-400">
+                <h2 className={cn("text-lg font-semibold", type === 'text' ? "text-zinc-900" : "text-zinc-900 dark:text-zinc-100")}>Password Required</h2>
+                <p className={cn("text-sm", type === 'text' ? "text-zinc-500" : "text-zinc-500 dark:text-zinc-400")}>
                   This shared link is password protected. Please enter the password to view.
                 </p>
               </div>
@@ -997,7 +1087,12 @@ export default function Home({ initialRecord }: HomeProps) {
                     placeholder="Enter password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                    className={cn(
+                      "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50",
+                      type === 'text'
+                        ? "bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-emerald-500"
+                        : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:border-emerald-500"
+                    )}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleUnlock();
                     }}
@@ -1013,7 +1108,12 @@ export default function Home({ initialRecord }: HomeProps) {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={handleCancelUnlock}
-                    className="flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
+                    className={cn(
+                      "flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                      type === 'text'
+                        ? "bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"
+                        : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100"
+                    )}
                   >
                     Cancel
                   </button>

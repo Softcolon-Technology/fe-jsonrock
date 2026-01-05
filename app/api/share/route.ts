@@ -4,19 +4,30 @@ import { createShareLink } from "../../../lib/shareLinks";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { json, mode, isPrivate, accessType, password } = body as {
+    let { json, mode, isPrivate, accessType, password, type } = body as {
       json?: string;
       mode?: "visualize" | "tree" | "formatter";
       isPrivate?: boolean;
       accessType?: "editor" | "viewer";
       password?: string;
+      type?: "json" | "text";
     };
 
-    if (typeof json !== "string" || !json.trim()) {
-      return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    if (type === 'text') {
+      json = json || "";
     }
 
-    if (!mode || !["visualize", "tree", "formatter"].includes(mode)) {
+    if (typeof json !== "string" || (!json.trim() && type !== 'text')) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    }
+
+    // Default mode to visualize if not provided (e.g. for text type)
+    let effectiveMode = mode;
+    if (type === 'text' && !effectiveMode) {
+      effectiveMode = "visualize";
+    }
+
+    if (!effectiveMode || !["visualize", "tree", "formatter"].includes(effectiveMode)) {
       return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
     }
 
@@ -31,15 +42,17 @@ export async function POST(req: NextRequest) {
 
     const record = await createShareLink({
       json,
-      mode,
+      mode: effectiveMode,
       isPrivate: isPrivateFlag,
       accessType,
       password: isPrivateFlag ? password : undefined,
+      type: type || 'json',
     });
 
     return NextResponse.json({
       slug: record.slug,
       mode: record.mode,
+      type: record.type,
       isPrivate: record.isPrivate,
       accessType: record.accessType,
     });

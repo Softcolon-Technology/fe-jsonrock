@@ -6,10 +6,13 @@ export type JsonShareMode = "visualize" | "tree" | "formatter";
 
 export type ShareAccessType = "editor" | "viewer";
 
+export type ShareType = "json" | "text";
+
 export interface ShareLinkRecord {
   _id?: string;
   slug: string;
-  json: string;
+  type: ShareType;
+  json: string; // Content (json or text)
   mode: JsonShareMode;
   isPrivate: boolean;
   accessType?: ShareAccessType; // Defaults to 'viewer' if undefined for old records
@@ -29,12 +32,14 @@ export async function createShareLink(input: {
   isPrivate: boolean;
   accessType?: ShareAccessType;
   password?: string;
+  type?: ShareType;
 }): Promise<ShareLinkRecord> {
   const db = await getDb();
   const slug = generateSlug();
 
   const record: ShareLinkRecord = {
     slug,
+    type: input.type || "json",
     json: input.json,
     mode: input.mode,
     isPrivate: input.isPrivate,
@@ -55,6 +60,7 @@ export async function updateShareLink(slug: string, input: {
   isPrivate: boolean;
   accessType?: ShareAccessType;
   password?: string;
+  type?: ShareType;
 }): Promise<boolean> {
   const db = await getDb();
 
@@ -66,6 +72,10 @@ export async function updateShareLink(slug: string, input: {
     accessType: input.accessType || "viewer",
     updatedAt: new Date(),
   };
+
+  if (input.type) {
+    updateDoc.type = input.type;
+  }
 
   if (input.isPrivate && input.password) {
     updateDoc.passwordHash = hashPassword(input.password);

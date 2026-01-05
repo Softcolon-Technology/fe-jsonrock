@@ -11,19 +11,26 @@ export async function PUT(req: NextRequest, { params }: Params) {
   try {
     const { slug } = await params;
     const body = await req.json();
-    const { json, mode, isPrivate, accessType, password } = body as {
+    const { json, mode, isPrivate, accessType, password, type } = body as {
       json?: string;
       mode?: "visualize" | "tree" | "formatter";
       isPrivate?: boolean;
       accessType?: "editor" | "viewer";
       password?: string;
+      type?: "json" | "text";
     };
 
     if (!json || typeof json !== "string" || !json.trim()) {
-      return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    if (!mode || !["visualize", "tree", "formatter"].includes(mode)) {
+    // Default mode if text
+    let effectiveMode = mode;
+    if (type === 'text' && !effectiveMode) {
+      effectiveMode = "visualize";
+    }
+
+    if (!effectiveMode || !["visualize", "tree", "formatter"].includes(effectiveMode)) {
       return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
     }
 
@@ -39,30 +46,53 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     // Constraint: If existing record is Private, it CANNOT be made Public.
     // We need to fetch the existing record to check this.
-    const { getShareLink, updateShareLink } = await import("@/lib/shareLinks");
+    // Constraint: If existing record is Private, it CANNOT be made Public.
+    // We need to fetch the existing record to check this.
+    const { getShareLink, updateShareLink, createShareLink } = await import("@/lib/shareLinks");
     const existingRecord = await getShareLink(slug);
 
-    if (!existingRecord) {
-      return NextResponse.json({ error: "Link not found" }, { status: 404 });
+    if (existingRecord) {
+      if (existingRecord.isPrivate && !isPrivateFlag) {
+        return NextResponse.json(
+          { error: "Cannot change a private link to public" },
+          { status: 400 }
+        );
+      }
     }
 
-    if (existingRecord.isPrivate && !isPrivateFlag) {
-      return NextResponse.json(
-        { error: "Cannot change a private link to public" },
-        { status: 400 }
-      );
+    // Try update first
+    let success = false;
+    if (existingRecord) {
+      success = await updateShareLink(slug, {
+        json,
+        mode: effectiveMode,
+        isPrivate: isPrivateFlag,
+        accessType,
+        password: isPrivateFlag ? password : undefined,
+        type
+      });
     }
-
-    const success = await updateShareLink(slug, {
-      json,
-      mode,
-      isPrivate: isPrivateFlag,
-      accessType,
-      password: isPrivateFlag ? password : undefined,
-    });
 
     if (!success) {
-      return NextResponse.json({ error: "Link not found or update failed" }, { status: 404 });
+      // Upsert: Record didn't exist or update failed. Try create.
+      if (!existingRecord) {
+        try {
+          await createShareLink({
+            slug,
+            json: json || "",
+            mode: effectiveMode,
+            isPrivate: isPrivateFlag,
+            accessType: accessType || "editor",
+            password: isPrivateFlag ? password : undefined,
+            type: type || 'json'
+          });
+          return NextResponse.json({ success: true, slug, created: true });
+        } catch (e) {
+          console.error("Upsert creation failed", e);
+          return NextResponse.json({ error: "Failed to create link" }, { status: 500 });
+        }
+      }
+      return NextResponse.json({ error: "Update failed" }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, slug });
@@ -99,6 +129,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({
       json: record.json,
       mode: record.mode,
+      type: record.type,
       isPrivate: record.isPrivate,
       accessType: record.accessType,
     });
