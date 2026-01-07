@@ -6,9 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: jsonrock
-
-    environment: production
+    runs-on: jsonrock prod
 
     steps:
       - name: Checkout code
