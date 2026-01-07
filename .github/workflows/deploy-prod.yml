@@ -7,12 +7,19 @@ on:
 jobs:
   build:
     runs-on: jsonrock prod
+    environment: production
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
+      - name: Set up Node.js ${{ secrets.DB_NAME }}"
         uses: actions/setup-node@v3
         with:
           node-version: 24
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Application
+        run: npm run build
