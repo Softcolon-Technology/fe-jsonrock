@@ -465,7 +465,7 @@ const RichTextEditor = ({ content, onChange, readOnly, remoteContent, forceLight
 
     return (
         <div className={cn("flex flex-col h-full bg-zinc-100", !forceLight && "dark:bg-[#050505]")}>
-            <Toolbar editor={editor} forceLight={forceLight} />
+            {!readOnly && <Toolbar editor={editor} forceLight={forceLight} />}
             <div
                 className="flex-1 overflow-y-auto p-4 lg:p-8 flex justify-center"
                 onClick={() => editor?.commands.focus()}
