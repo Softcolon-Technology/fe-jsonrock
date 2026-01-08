@@ -13,7 +13,9 @@ import { Highlight } from '@tiptap/extension-highlight';
 import { Link as TiptapLink } from '@tiptap/extension-link';
 import { Image as TiptapImage } from '@tiptap/extension-image';
 import CodeBlock from '@tiptap/extension-code-block';
-import { Extension } from '@tiptap/core';
+import { Extension, Node as TiptapNode } from '@tiptap/core';
+import { PageNode } from './extensions/PageNode';
+import { PageManager } from './extensions/PageManager';
 import {
     Bold, Italic, Underline as UnderlineIcon,
     AlignLeft, AlignCenter, AlignRight, AlignJustify,
@@ -38,13 +40,24 @@ const FontSize = Extension.create({
                 attributes: {
                     fontSize: {
                         default: null,
-                        parseHTML: element => element.style.fontSize.replace('px', ''),
+                        parseHTML: element => {
+                            const val = element.style.fontSize;
+                            if (!val) return null;
+                            // Convert px to pt (1px = 0.75pt) if needed
+                            if (val.includes('px')) {
+                                const px = parseFloat(val);
+                                return Math.round(px * 0.75).toString();
+                            }
+                            // Keep raw number or remove pt
+                            return val.replace(/['"]+/g, '').replace(/pt/, '');
+                        },
                         renderHTML: attributes => {
                             if (!attributes.fontSize) {
                                 return {};
                             }
+                            // Render as PT with !important to ensure override
                             return {
-                                style: `font-size: ${attributes.fontSize}px`,
+                                style: `font-size: ${attributes.fontSize}pt !important`,
                             };
                         },
                     },
@@ -68,6 +81,38 @@ const FontSize = Extension.create({
         };
     },
 });
+
+// Tab Key Support Extension
+const TabKey = Extension.create({
+    name: 'tabKey',
+    addKeyboardShortcuts() {
+        return {
+            Tab: () => {
+                // Insert 4 non-breaking spaces for visual tab
+                return this.editor.commands.insertContent('\u00A0\u00A0\u00A0\u00A0');
+            },
+        };
+    },
+});
+
+// Custom Document that contains pages
+const PageDocument = TiptapNode.create({
+    name: 'doc',
+    topNode: true,
+    content: 'page+',
+});
+
+// Helper to wrap content in a page if not already wrapped
+const ensurePageWrapper = (content: string): string => {
+    if (!content || content.trim() === '') {
+        return '<div data-page="true"><p></p></div>';
+    }
+    if (content.includes('data-page="true"') || content.includes('data-page=')) {
+        return content;
+    }
+    // Wrap existing content in a page
+    return `<div data-page="true">${content}</div>`;
+};
 
 interface RichTextEditorProps {
     content: string;
@@ -100,168 +145,217 @@ const ToolbarDivider = ({ forceLight }: { forceLight?: boolean }) => (
 );
 
 const Toolbar = ({ editor, forceLight }: { editor: Editor | null, forceLight?: boolean }) => {
+    const handleFontSizeChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+        const size = e.target.value;
+        if (size) {
+            (editor as any)?.commands.setFontSize(size);
+        } else {
+            (editor as any)?.commands.unsetFontSize();
+        }
+    }, [editor]);
+
+    const getCurrentFontSize = () => {
+        if (!editor) return '16'; // Default to 16
+        const markAttrs = editor.getAttributes('textStyle');
+        if (markAttrs.fontSize) return markAttrs.fontSize;
+        const { $from } = editor.state.selection;
+        const parent = $from.parent;
+        if ((parent.type.name === 'paragraph' || parent.type.name === 'heading') && parent.attrs.fontSize) {
+            return parent.attrs.fontSize;
+        }
+        return '16'; // Default
+    };
+
     if (!editor) return null;
 
-    const headingLevel = editor.getAttributes('heading').level;
-    const currentHeading = headingLevel ? `h${headingLevel}` : 'p';
-
-    // Normalize font family: strip quotes to ensure robust matching against options
-    const rawFont = editor.getAttributes('textStyle').fontFamily || '';
-    const currentFont = rawFont.replace(/['"]/g, '');
-
-    // Check both mark and node attributes for font size
-    const currentFontSize = editor.getAttributes('textStyle').fontSize ||
-        editor.getAttributes('heading').fontSize ||
-        editor.getAttributes('paragraph').fontSize ||
-        '12';
-
     return (
-        <div className={cn("flex flex-col border-b border-zinc-200 bg-white shrink-0 z-10 sticky top-0", !forceLight && "dark:border-zinc-800 dark:bg-zinc-950")}>
-            {/* Primary Toolbar Row */}
-            <div className="flex items-center px-2 py-1.5 overflow-x-auto gap-0.5 no-scrollbar">
+        <div className={cn("flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-zinc-200 bg-zinc-50 shrink-0", !forceLight && "dark:border-zinc-800 dark:bg-zinc-900")}>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().undo().run()}
+                disabled={!editor.can().undo()}
+                title="Undo"
+                forceLight={forceLight}
+            >
+                <Undo className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().redo().run()}
+                disabled={!editor.can().redo()}
+                title="Redo"
+                forceLight={forceLight}
+            >
+                <Redo className="w-4 h-4" />
+            </ToolbarButton>
 
-                <ToolbarButton onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="Undo" forceLight={forceLight}><Undo size={16} /></ToolbarButton>
-                <ToolbarButton onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="Redo" forceLight={forceLight}><Redo size={16} /></ToolbarButton>
+            <ToolbarDivider forceLight={forceLight} />
 
-                <ToolbarDivider forceLight={forceLight} />
+            <select
+                value={getCurrentFontSize()}
+                onChange={handleFontSizeChange}
+                className={cn("h-7 px-1 text-xs border rounded bg-white border-zinc-200 text-zinc-700 min-w-[60px]", !forceLight && "dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300")}
+            >
+                {/* <option value="">Size</option> */}
+                {[10, 11, 12, 13, 14, 15, 16, 18, 20, 24, 28, 32, 36, 40, 48, 60, 72, 96].map(size => (
+                    <option key={size} value={size}>{size}</option>
+                ))}
+            </select>
 
-                {/* Headings */}
-                <select
-                    className={cn(
-                        "h-7 text-xs border border-zinc-200 rounded bg-transparent px-2 w-28 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer",
-                        !forceLight && "dark:border-zinc-700"
-                    )}
-                    onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === 'p') {
-                            editor.chain().focus().setParagraph().unsetMark('textStyle').run();
-                        } else if (val.startsWith('h')) {
-                            const level = parseInt(val.substring(1));
-                            const sizes: Record<number, string> = {
-                                1: '32', 2: '24', 3: '18.72', 4: '16', 5: '13.28', 6: '10.72'
-                            };
-                            editor.chain().focus()
-                                .unsetMark('textStyle')
-                                .setHeading({ level: level as any, fontSize: sizes[level] } as any)
-                                .run();
-                        }
-                    }}
-                    value={currentHeading}
-                >
-                    <option value="p">Normal text</option>
-                    <option value="h1">Heading 1</option>
-                    <option value="h2">Heading 2</option>
-                    <option value="h3">Heading 3</option>
-                    <option value="h4">Heading 4</option>
-                    <option value="h5">Heading 5</option>
-                    <option value="h6">Heading 6</option>
-                </select>
+            <ToolbarDivider forceLight={forceLight} />
 
-                <ToolbarDivider forceLight={forceLight} />
+            <ToolbarButton
+                onClick={() => editor.chain().focus().toggleBold().run()}
+                isActive={editor.isActive('bold')}
+                title="Bold"
+                forceLight={forceLight}
+            >
+                <Bold className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().toggleItalic().run()}
+                isActive={editor.isActive('italic')}
+                title="Italic"
+                forceLight={forceLight}
+            >
+                <Italic className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().toggleUnderline().run()}
+                isActive={editor.isActive('underline')}
+                title="Underline"
+                forceLight={forceLight}
+            >
+                <UnderlineIcon className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().toggleHighlight().run()}
+                isActive={editor.isActive('highlight')}
+                title="Highlight"
+                forceLight={forceLight}
+            >
+                <Highlighter className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                isActive={editor.isActive('codeBlock')}
+                title="Code Block"
+                forceLight={forceLight}
+            >
+                <CodeIcon className="w-4 h-4" />
+            </ToolbarButton>
 
-                {/* Fonts */}
-                <select
-                    className={cn(
-                        "h-7 text-xs border border-zinc-200 rounded bg-transparent px-2 w-32 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer",
-                        !forceLight && "dark:border-zinc-700"
-                    )}
-                    onChange={(e) => editor.chain().focus().setFontFamily(e.target.value).run()}
-                    value={currentFont}
-                >
-                    <option value="">Default</option>
-                    <option value="Arial, sans-serif">Arial</option>
-                    {/* Using single quotes inside the value string for consistency with CSS font-family syntax */}
-                    <option value="'Times New Roman', serif">Times New Roman</option>
-                    <option value="'Courier New', monospace">Courier New</option>
-                    <option value="'Georgia', serif">Georgia</option>
-                    <option value="'Verdana', sans-serif">Verdana</option>
-                    <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                    <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
-                </select>
+            <ToolbarDivider forceLight={forceLight} />
 
-                <ToolbarDivider forceLight={forceLight} />
+            <ToolbarButton
+                onClick={() => editor.chain().focus().setTextAlign('left').run()}
+                isActive={editor.isActive({ textAlign: 'left' })}
+                title="Align Left"
+                forceLight={forceLight}
+            >
+                <AlignLeft className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().setTextAlign('center').run()}
+                isActive={editor.isActive({ textAlign: 'center' })}
+                title="Align Center"
+                forceLight={forceLight}
+            >
+                <AlignCenter className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().setTextAlign('right').run()}
+                isActive={editor.isActive({ textAlign: 'right' })}
+                title="Align Right"
+                forceLight={forceLight}
+            >
+                <AlignRight className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+                isActive={editor.isActive({ textAlign: 'justify' })}
+                title="Justify"
+                forceLight={forceLight}
+            >
+                <AlignJustify className="w-4 h-4" />
+            </ToolbarButton>
 
-                {/* Font Size */}
-                <select
-                    className={cn(
-                        "h-7 text-xs border border-zinc-200 rounded bg-transparent px-2 w-16 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer",
-                        !forceLight && "dark:border-zinc-700"
-                    )}
-                    onChange={(e) => {
-                        const size = e.target.value;
-                        editor.chain().focus().setMark('textStyle', { fontSize: size }).run();
+            <ToolbarDivider forceLight={forceLight} />
 
-                        // Fix cursor size on empty lines by setting attribute on the node
-                        const { empty, $from } = editor.state.selection;
-                        const parent = $from.parent;
-                        if (empty && parent.content.size === 0 && (parent.type.name === 'paragraph' || parent.type.name === 'heading')) {
-                            editor.commands.updateAttributes(parent.type.name, { fontSize: size });
-                        }
-                    }}
-                    value={currentFontSize}
-                >
-                    <option value="" disabled>Size</option>
-                    {[8, 9, 10, 10.72, 11, 12, 13.28, 14, 16, 18, 18.72, 20, 24, 30, 32, 36, 48, 60, 72, 96].map((size) => (
-                        <option key={size} value={size}>{size}</option>
-                    ))}
-                </select>
-
-                <ToolbarDivider forceLight={forceLight} />
-
-                <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} isActive={editor.isActive('bold')} title="Bold" forceLight={forceLight}><Bold size={16} /></ToolbarButton>
-                <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} isActive={editor.isActive('italic')} title="Italic" forceLight={forceLight}><Italic size={16} /></ToolbarButton>
-                <ToolbarButton onClick={() => editor.chain().focus().toggleUnderline().run()} isActive={editor.isActive('underline')} title="Underline" forceLight={forceLight}><UnderlineIcon size={16} /></ToolbarButton>
-                <ToolbarButton onClick={() => editor.chain().focus().toggleHighlight().run()} isActive={editor.isActive('highlight')} title="Highlight" forceLight={forceLight}><Highlighter size={16} /></ToolbarButton>
-
-                <div className="flex items-center justify-center w-7 h-7 relative group" title="Text Color">
-                    <div
-                        className={cn("w-4 h-4 rounded border border-zinc-300 pointer-events-none absolute", !forceLight && "dark:border-zinc-600")}
-                        style={{ backgroundColor: editor.getAttributes('textStyle').color || '#000000' }}
-                    />
-                    <input
-                        type="color"
-                        onInput={e => editor.chain().focus().setColor((e.target as HTMLInputElement).value).run()}
-                        value={editor.getAttributes('textStyle').color || '#000000'}
-                        className="opacity-0 w-full h-full cursor-pointer absolute inset-0"
-                        title="Text Color"
-                    />
-                </div>
-
-                <ToolbarDivider forceLight={forceLight} />
-
-                <ToolbarButton onClick={() => editor.chain().focus().toggleCodeBlock().run()} isActive={editor.isActive('codeBlock')} title="Code Block" forceLight={forceLight}>
-                    <CodeIcon size={16} />
-                </ToolbarButton>
-
-                <ToolbarDivider forceLight={forceLight} />
-
-                <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('left').run()} isActive={editor.isActive({ textAlign: 'left' })} title="Align Left" forceLight={forceLight}><AlignLeft size={16} /></ToolbarButton>
-                <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('center').run()} isActive={editor.isActive({ textAlign: 'center' })} title="Align Center" forceLight={forceLight}><AlignCenter size={16} /></ToolbarButton>
-                <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('right').run()} isActive={editor.isActive({ textAlign: 'right' })} title="Align Right" forceLight={forceLight}><AlignRight size={16} /></ToolbarButton>
-                <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('justify').run()} isActive={editor.isActive({ textAlign: 'justify' })} title="Justify" forceLight={forceLight}><AlignJustify size={16} /></ToolbarButton>
-
-                <ToolbarDivider forceLight={forceLight} />
-
-                <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()} isActive={editor.isActive('bulletList')} title="Bullet List" forceLight={forceLight}><List size={16} /></ToolbarButton>
-                <ToolbarButton onClick={() => editor.chain().focus().toggleOrderedList().run()} isActive={editor.isActive('orderedList')} title="Ordered List" forceLight={forceLight}><ListOrdered size={16} /></ToolbarButton>
-                <ToolbarButton onClick={() => editor.chain().focus().toggleBlockquote().run()} isActive={editor.isActive('blockquote')} title="Quote" forceLight={forceLight}><Quote size={16} /></ToolbarButton>
-            </div>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().toggleBulletList().run()}
+                isActive={editor.isActive('bulletList')}
+                title="Bullet List"
+                forceLight={forceLight}
+            >
+                <List className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                isActive={editor.isActive('orderedList')}
+                title="Ordered List"
+                forceLight={forceLight}
+            >
+                <ListOrdered className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton
+                onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                isActive={editor.isActive('blockquote')}
+                title="Blockquote"
+                forceLight={forceLight}
+            >
+                <Quote className="w-4 h-4" />
+            </ToolbarButton>
         </div>
     );
 };
 
 const StatusBar = ({ editor, forceLight }: { editor: Editor | null, forceLight?: boolean }) => {
+    const [stats, setStats] = React.useState({ words: 0, lines: 0, characters: 0 });
+
+    React.useEffect(() => {
+        if (!editor) return;
+
+        const updateStats = () => {
+            const wordCount = editor.storage.characterCount?.words() || 0;
+            const charCount = editor.storage.characterCount?.characters() || 0;
+
+            // Calculate actual lines (blocks)
+            let lineCount = 0;
+            editor.state.doc.descendants((node) => {
+                if (node.type.name === 'paragraph' ||
+                    node.type.name === 'heading' ||
+                    node.type.name === 'codeBlock') {
+                    lineCount++;
+                }
+            });
+
+            setStats({ words: wordCount, lines: lineCount, characters: charCount });
+        };
+
+        // Initial update
+        updateStats();
+
+        // Listen to all relevant events
+        editor.on('transaction', updateStats);
+        editor.on('update', updateStats);
+        editor.on('selectionUpdate', updateStats);
+
+        return () => {
+            editor.off('transaction', updateStats);
+            editor.off('update', updateStats);
+            editor.off('selectionUpdate', updateStats);
+        };
+    }, [editor]);
+
     if (!editor) return null;
 
     return (
         <div className={cn("flex items-center justify-between px-4 py-1.5 border-t border-zinc-200 bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500 font-medium", !forceLight && "dark:border-zinc-800 dark:bg-zinc-900/50")}>
             <div className="flex gap-4">
-                <span>Words: {editor.storage.characterCount.words()}</span>
-                <span>Characters: {editor.storage.characterCount.characters()}</span>
+                <span>Words: {stats.words}</span>
+                <span>Lines: {stats.lines}</span>
             </div>
             <div>
-                {/* Right aligned status items if needed */}
-                Rich Text Mode
+
             </div>
         </div>
     );
@@ -270,11 +364,13 @@ const StatusBar = ({ editor, forceLight }: { editor: Editor | null, forceLight?:
 const RichTextEditor = ({ content, onChange, readOnly, remoteContent, forceLight }: RichTextEditorProps) => {
     const isRemoteUpdate = React.useRef(false);
     const [, forceUpdate] = React.useState({});
+    const containerRef = React.useRef<HTMLDivElement>(null);
 
     const editor = useEditor({
         immediatelyRender: false,
         extensions: [
             StarterKit.configure({
+                document: false,
                 codeBlock: false,
                 bulletList: {
                     HTMLAttributes: {
@@ -299,7 +395,7 @@ const RichTextEditor = ({ content, onChange, readOnly, remoteContent, forceLight
             }),
             CodeBlock.configure({
                 HTMLAttributes: {
-                    class: cn('not-prose bg-zinc-100 p-3 rounded-md border border-zinc-200 font-mono text-sm shadow-sm my-2 block whitespace-pre overflow-x-auto', !forceLight && "dark:bg-zinc-800 dark:border-zinc-700"),
+                    class: cn('page-code-block not-prose bg-zinc-100 p-3 rounded-md border border-zinc-200 font-mono text-sm shadow-sm my-2 block', !forceLight && "dark:bg-zinc-800 dark:border-zinc-700"),
                 },
             }),
             Underline,
@@ -313,13 +409,18 @@ const RichTextEditor = ({ content, onChange, readOnly, remoteContent, forceLight
             FontFamily,
             Highlight,
             TiptapLink.configure({ openOnClick: false }),
-            TiptapImage
+            TiptapImage,
+            PageDocument,
+            PageNode,
+            PageManager,
+            TabKey
         ],
-        content: content,
+        content: ensurePageWrapper(content),
         editable: !readOnly,
         editorProps: {
             attributes: {
-                class: cn('prose focus:outline-none max-w-none min-h-[800px] w-full', !forceLight && "dark:prose-invert"),
+                class: cn('prose focus:outline-none w-full mx-auto', !forceLight && "dark:prose-invert"),
+                style: 'line-height: 1.6; word-wrap: break-word; overflow-wrap: break-word; white-space: pre-wrap;',
             },
         },
         onUpdate: ({ editor }) => {
@@ -328,7 +429,6 @@ const RichTextEditor = ({ content, onChange, readOnly, remoteContent, forceLight
         },
         onSelectionUpdate: ({ editor }) => {
             forceUpdate({});
-            // Sync cursor size for empty nodes: copy active mark size to node attribute
             const { empty, $from } = editor.state.selection;
             if (empty) {
                 const parent = $from.parent;
@@ -346,10 +446,11 @@ const RichTextEditor = ({ content, onChange, readOnly, remoteContent, forceLight
     // Handle Remote Updates
     React.useEffect(() => {
         if (remoteContent && editor) {
+            const wrappedContent = ensurePageWrapper(remoteContent);
             const currentHTML = editor.getHTML();
-            if (currentHTML !== remoteContent) {
+            if (currentHTML !== wrappedContent) {
                 isRemoteUpdate.current = true;
-                editor.commands.setContent(remoteContent);
+                editor.commands.setContent(wrappedContent);
                 isRemoteUpdate.current = false;
             }
         }
@@ -370,10 +471,8 @@ const RichTextEditor = ({ content, onChange, readOnly, remoteContent, forceLight
                 onClick={() => editor?.commands.focus()}
             >
                 <div
-                    className={cn("w-full max-w-[850px] bg-white shadow-xl border border-zinc-200 min-h-[1000px] p-12 lg:p-16 cursor-text transition-all duration-300", !forceLight && "dark:bg-[#09090b] dark:border-zinc-800/50")}
-                    style={{
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.01)'
-                    }}
+                    ref={containerRef}
+                    className="w-full max-w-[816px] cursor-text"
                 >
                     <EditorContent editor={editor} />
                 </div>

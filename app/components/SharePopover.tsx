@@ -17,6 +17,7 @@ interface SharePopoverProps {
 
     // New Prop: Can Configure
     canConfigure?: boolean;
+    forceLight?: boolean;
 
     // Handler for Save & Copy
     onShare: (settings: {
@@ -35,7 +36,8 @@ export function SharePopover({
     initialIsPrivate,
     initialPassword = "",
     isLockedPrivate = false,
-    canConfigure = true, // Default to true if not provided (backwards compat)
+    canConfigure = true,
+    forceLight = false,
     onShare,
     isLoading = false
 }: SharePopoverProps) {
@@ -63,21 +65,21 @@ export function SharePopover({
             {/* Overlay click to close */}
             <div className="absolute inset-0" onClick={onClose} />
 
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-100 rounded-xl shadow-2xl w-[90vw] max-w-md p-6 relative animate-in zoom-in-95 duration-200 z-10 flex flex-col gap-6">
+            <div className={cn("bg-white border border-zinc-200 text-zinc-800 rounded-xl shadow-2xl w-[90vw] max-w-md p-6 relative animate-in zoom-in-95 duration-200 z-10 flex flex-col gap-6", !forceLight && "dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-100")}>
 
                 {/* Header */}
                 <div>
-                    <h3 className="text-lg font-semibold flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
-                        <Users size={20} className="text-emerald-600 dark:text-emerald-500" />
+                    <h3 className={cn("text-lg font-semibold flex items-center gap-2 text-zinc-900", !forceLight && "dark:text-zinc-100")}>
+                        <Users size={20} className={cn("text-emerald-600", !forceLight && "dark:text-emerald-500")} />
                         Share Visualization
                     </h3>
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                    <p className={cn("text-sm text-zinc-500 mt-1", !forceLight && "dark:text-zinc-400")}>
                         Configure access settings and copy the link to share.
                     </p>
                 </div>
 
                 {!canConfigure && (
-                    <div className="text-xs text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-2 py-1.5 rounded-md flex items-center gap-2 mb-2">
+                    <div className={cn("text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1.5 rounded-md flex items-center gap-2 mb-2", !forceLight && "dark:text-amber-500 dark:bg-amber-500/10 dark:border-amber-500/20")}>
                         <Lock size={12} />
                         Only the owner can modify share settings.
                     </div>
@@ -96,7 +98,7 @@ export function SharePopover({
                                 <select
                                     value={accessType}
                                     onChange={(e) => setAccessType(e.target.value as AccessType)}
-                                    className="w-full appearance-none bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 focus:ring-1 focus:ring-emerald-500/50 outline-none cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"
+                                    className={cn("w-full appearance-none bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2.5 text-sm text-zinc-900 focus:ring-1 focus:ring-emerald-500/50 outline-none cursor-pointer hover:border-zinc-300 transition-colors", !forceLight && "dark:bg-zinc-950 dark:border-zinc-800 dark:text-zinc-200 dark:hover:border-zinc-700")}
                                 >
                                     <option value="viewer">Viewer (Read Only)</option>
                                     <option value="editor">Editor (Collaborate)</option>
@@ -108,13 +110,13 @@ export function SharePopover({
                         {/* Privacy Toggle */}
                         <div className="flex-1 flex flex-col gap-1.5">
                             <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Visibility</label>
-                            <div className="flex bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-1">
+                            <div className={cn("flex bg-zinc-50 border border-zinc-200 rounded-lg p-1", !forceLight && "dark:bg-zinc-950 dark:border-zinc-800")}>
                                 <button
                                     onClick={() => setIsPrivate(false)}
                                     disabled={!canConfigure || isLockedPrivate}
                                     className={cn(
                                         "flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-md transition-all",
-                                        !isPrivate ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm border border-zinc-200 dark:border-zinc-700" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300",
+                                        !isPrivate ? cn("bg-white text-zinc-900 shadow-sm border border-zinc-200", !forceLight && "dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700") : cn("text-zinc-500 hover:text-zinc-700", !forceLight && "dark:hover:text-zinc-300"),
                                         (!canConfigure || isLockedPrivate) && "cursor-not-allowed opacity-50"
                                     )}
                                     title={isLockedPrivate ? "Cannot change private link back to public" : undefined}
@@ -125,7 +127,7 @@ export function SharePopover({
                                     onClick={() => setIsPrivate(true)}
                                     className={cn(
                                         "flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-md transition-all",
-                                        isPrivate ? "bg-white dark:bg-zinc-800 text-amber-600 dark:text-amber-500 shadow-sm border border-zinc-200 dark:border-zinc-700" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                        isPrivate ? cn("bg-white text-amber-600 shadow-sm border border-zinc-200", !forceLight && "dark:bg-zinc-800 dark:text-amber-500 dark:border-zinc-700") : cn("text-zinc-500 hover:text-zinc-700", !forceLight && "dark:hover:text-zinc-300")
                                     )}
                                 >
                                     <Lock size={12} /> Private
@@ -137,7 +139,7 @@ export function SharePopover({
                     {/* Row 2: Password (Conditional) */}
                     {isPrivate && (
                         <div className="flex flex-col gap-1.5 animate-in slide-in-from-top-2 duration-200">
-                            <label className="text-xs font-medium text-amber-600 dark:text-amber-500 uppercase tracking-wider flex items-center gap-1">
+                            <label className={cn("text-xs font-medium text-amber-600 uppercase tracking-wider flex items-center gap-1", !forceLight && "dark:text-amber-500")}>
                                 <Lock size={10} /> Password Required
                             </label>
                             <input
@@ -145,7 +147,7 @@ export function SharePopover({
                                 placeholder="Set a password (min 4 chars)"
                                 value={password || ""}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/20 transition-all font-mono"
+                                className={cn("w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/20 transition-all font-mono", !forceLight && "dark:bg-zinc-950 dark:border-zinc-800 dark:text-zinc-200 dark:placeholder:text-zinc-600")}
                             />
                             <p className="text-[10px] text-zinc-500">
                                 Anyone with the link will need to enter this password.
@@ -162,7 +164,7 @@ export function SharePopover({
                 <div className="flex items-center gap-3 pt-2 relative z-30">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 rounded-lg text-sm font-medium border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors"
+                        className={cn("px-4 py-2 rounded-lg text-sm font-medium border border-zinc-200 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 transition-colors", !forceLight && "dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200")}
                     >
                         Cancel
                     </button>
@@ -172,7 +174,7 @@ export function SharePopover({
                         className={cn(
                             "flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white shadow-lg shadow-emerald-900/20 transition-all",
                             isLoading || (isPrivate && (!password || password.length < 4))
-                                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed border border-zinc-200 dark:border-zinc-700"
+                                ? cn("bg-zinc-100 text-zinc-400 cursor-not-allowed border border-zinc-200", !forceLight && "dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700")
                                 : "bg-emerald-600 hover:bg-emerald-500 hover:shadow-emerald-900/30 active:scale-[0.98]"
                         )}
                     >

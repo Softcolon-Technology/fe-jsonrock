@@ -65,7 +65,7 @@ export const NodeModal = ({ isOpen, onClose, data }: NodeModalProps) => {
                             <div className="h-40 overflow-hidden text-[10px] !rounded-none !border-none !shadow-none">
                                 <JsonEditor
                                     defaultValue={JSON.stringify(data.content, null, 2)}
-                                    remoteValue={JSON.stringify(data.content, null, 2)}
+                                    remoteValue={{ code: JSON.stringify(data.content, null, 2), nonce: 0 }}
                                     readOnly={true}
                                     onChange={() => { }}
                                 />

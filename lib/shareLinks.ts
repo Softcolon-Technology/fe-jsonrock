@@ -33,9 +33,10 @@ export async function createShareLink(input: {
   accessType?: ShareAccessType;
   password?: string;
   type?: ShareType;
+  slug?: string;
 }): Promise<ShareLinkRecord> {
   const db = await getDb();
-  const slug = generateSlug();
+  const slug = input.slug || generateSlug();
 
   const record: ShareLinkRecord = {
     slug,

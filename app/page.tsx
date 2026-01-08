@@ -328,7 +328,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   const handleNew = async (specificType?: 'json' | 'text') => {
     const targetType = (typeof specificType === 'string') ? specificType : type;
     const isText = targetType === 'text';
-    const initialContent = isText ? '' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
+    const initialContent = isText ? 'Type your text here...' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
 
     setJsonInput(initialContent);
     setSlug(null);
@@ -397,11 +397,15 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         })
       });
 
+      const data = await res.json();
       if (res.ok) {
+        if (data.created) {
+          addOwnership(slug);
+        }
         if (isPrivate) setIsPersistedPrivate(true);
         if (!silent) showAlert("Saved Successfully", "Your changes have been saved.", "success");
       } else {
-        const err = await res.json();
+        const err = data;
         if (!silent) showAlert("Save Failed", err.error || "An error occurred while saving.", "error");
       }
     } catch (e) {
@@ -647,7 +651,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         {/* Top Bar */}
         <header className={cn("h-14 border-b border-zinc-200 flex items-center justify-between px-2 lg:px-6 bg-white shrink-0", type !== 'text' && "dark:border-zinc-900 dark:bg-zinc-950")}>
           <div className="flex items-center gap-2 sm:gap-3">
-            <a href={slug ? `/share/${slug}` : '/'} className="flex items-center hover:opacity-80 transition-opacity" title="Refresh Page">
+            <a href={slug ? (type === 'text' ? `/share/text/${slug}` : `/share/${slug}`) : '/'} className="flex items-center hover:opacity-80 transition-opacity" title="Refresh Page">
               <img src="/jsonrock-dark.svg" alt="JSONROCK" className={cn("h-5 sm:h-6 w-auto", type !== 'text' ? "block dark:hidden" : "block")} />
               <img src="/jsonrock-light.svg" alt="JSONROCK" className={cn("h-5 sm:h-6 w-auto", type !== 'text' ? "hidden dark:block" : "hidden")} />
             </a>
@@ -660,17 +664,20 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
 
           <div className="flex items-center gap-1.5 sm:gap-4">
             {/* Upload Button */}
-            <button
-              onClick={() => setIsUploadOpen(true)}
-              className={cn(
-                "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 border border-zinc-200 transition-colors text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200",
-                type !== 'text' && "dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-              )}
-              title="Upload JSON"
-            >
-              <UploadCloud size={14} />
-              <span className="hidden lg:inline">Upload</span>
-            </button>
+            {/* Upload Button - Hidden in Text Mode */}
+            {type !== 'text' && (
+              <button
+                onClick={() => setIsUploadOpen(true)}
+                className={cn(
+                  "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 border border-zinc-200 transition-colors text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200",
+                  "dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                )}
+                title="Upload JSON"
+              >
+                <UploadCloud size={14} />
+                <span className="hidden lg:inline">Upload</span>
+              </button>
+            )}
 
             {/* New JSON */}
             <button
@@ -936,51 +943,45 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
               </div>
             ) : (
               <>
-                {activeTab === "visualize" && (
-                  <div className="h-full w-full pl-16">
-                    {layouting ? (
-                      <div className="flex h-full items-center justify-center text-zinc-500 gap-2">
-                        <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
-                        Layouting...
-                      </div>
-                    ) : (
-                      <GraphView nodes={nodes} edges={edges} />
-                    )}
-                  </div>
-                )}
-
-                {activeTab === "tree" && (
-                  <div className="h-full w-full overflow-hidden pl-16">
-                    <TreeExplorer data={parsedJson} />
-                  </div>
-                )}
-
-                {activeTab === "formatter" && (
-                  <div className="h-full w-full flex flex-col">
-                    <div className="flex items-center justify-between pl-4 pr-4 py-1 bg-gradient-to-b from-gray-50 to-gray-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 h-11 shrink-0 ml-16">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 whitespace-nowrap">JSON Formatter</span>
-                        <select
-                          value={tabSize}
-                          onChange={(e) => setTabSize(e.target.value)}
-                          className="bg-zinc-100 dark:bg-zinc-800 border-none text-zinc-900 dark:text-zinc-300 text-xs rounded px-2 py-1 focus:ring-1 focus:ring-emerald-500/50 outline-none cursor-pointer"
-                        >
-                          <option value="2">2 Tabs</option>
-                          <option value="3">3 Tabs</option>
-                          <option value="4">4 Tabs</option>
-                          <option value="minify">Minify</option>
-                        </select>
-                      </div>
-                      <button onClick={handleCopy} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors group relative">
-                        {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} className="text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-zinc-200" />}
-                        <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">Copy Output</span>
-                      </button>
+                <div className={cn("h-full w-full pl-16", activeTab !== "visualize" && "hidden")}>
+                  {layouting ? (
+                    <div className="flex h-full items-center justify-center text-zinc-500 gap-2">
+                      <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
+                      Layouting...
                     </div>
-                    <div className="flex-1 ml-16">
-                      <JsonEditor defaultValue={formattedOutput} remoteValue={{ code: formattedOutput, nonce: 0 }} onChange={() => { }} readOnly={true} className="rounded-none border-0 shadow-none" />
+                  ) : (
+                    <GraphView nodes={nodes} edges={edges} />
+                  )}
+                </div>
+
+                <div className={cn("h-full w-full overflow-hidden pl-16", activeTab !== "tree" && "hidden")}>
+                  <TreeExplorer data={parsedJson} />
+                </div>
+
+                <div className={cn("h-full w-full flex flex-col", activeTab !== "formatter" && "hidden")}>
+                  <div className="flex items-center justify-between pl-4 pr-4 py-1 bg-gradient-to-b from-gray-50 to-gray-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 h-11 shrink-0 ml-16">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 whitespace-nowrap">JSON Formatter</span>
+                      <select
+                        value={tabSize}
+                        onChange={(e) => setTabSize(e.target.value)}
+                        className="bg-zinc-100 dark:bg-zinc-800 border-none text-zinc-900 dark:text-zinc-300 text-xs rounded px-2 py-1 focus:ring-1 focus:ring-emerald-500/50 outline-none cursor-pointer"
+                      >
+                        <option value="2">2 Tabs</option>
+                        <option value="3">3 Tabs</option>
+                        <option value="4">4 Tabs</option>
+                        <option value="minify">Minify</option>
+                      </select>
                     </div>
+                    <button onClick={handleCopy} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors group relative">
+                      {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} className="text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-zinc-200" />}
+                      <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">Copy Output</span>
+                    </button>
                   </div>
-                )}
+                  <div className="flex-1 ml-16">
+                    <JsonEditor defaultValue={formattedOutput} remoteValue={{ code: formattedOutput, nonce: 0 }} onChange={() => { }} readOnly={true} className="rounded-none border-0 shadow-none" />
+                  </div>
+                </div>
               </>
             )}
           </div>
@@ -992,6 +993,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         title={alertConfig.title}
         message={alertConfig.message}
         type={alertConfig.type}
+        forceLight={type === 'text'}
       />
 
       {/* Upload Modal */}
@@ -1142,6 +1144,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         isLockedPrivate={isPersistedPrivate}
         onShare={handleShare}
         isLoading={isSaving}
+        forceLight={type === 'text'}
       />
     </div >
   );

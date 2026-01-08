@@ -55,7 +55,7 @@ const GraphViewContent: React.FC<GraphViewProps> = ({ nodes, edges }) => {
     if (!mounted) return null;
 
     return (
-        <div className={cn("h-full w-full relative", isDark ? "bg-[#050505]" : "bg-gray-50")}>
+        <div className={cn("h-full w-full relative", isDark ? "bg-zinc-950" : "bg-gray-50")}>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}

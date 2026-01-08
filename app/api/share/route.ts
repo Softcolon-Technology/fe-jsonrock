@@ -4,13 +4,14 @@ import { createShareLink } from "../../../lib/shareLinks";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    let { json, mode, isPrivate, accessType, password, type } = body as {
+    let { json, mode, isPrivate, accessType, password, type, slug } = body as {
       json?: string;
       mode?: "visualize" | "tree" | "formatter";
       isPrivate?: boolean;
       accessType?: "editor" | "viewer";
       password?: string;
       type?: "json" | "text";
+      slug?: string;
     };
 
     if (type === 'text') {
