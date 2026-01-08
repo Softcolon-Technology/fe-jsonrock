@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Copy, Globe, Lock, Check, ChevronDown, Users, FileJson } from "lucide-react";
+import { Copy, Globe, Lock, Check, ChevronDown, Users, FileJson, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type AccessType = "editor" | "viewer";
@@ -44,6 +44,7 @@ export function SharePopover({
     const [accessType, setAccessType] = useState<AccessType>(initialAccessType);
     const [isPrivate, setIsPrivate] = useState(initialIsPrivate);
     const [password, setPassword] = useState(initialPassword);
+    const [showPassword, setShowPassword] = useState(false);
 
     // Reset state when opening
     useEffect(() => {
@@ -142,13 +143,23 @@ export function SharePopover({
                             <label className={cn("text-xs font-medium text-amber-600 uppercase tracking-wider flex items-center gap-1", !forceLight && "dark:text-amber-500")}>
                                 <Lock size={10} /> Password Required
                             </label>
-                            <input
-                                type="password"
-                                placeholder="Set a password (min 4 chars)"
-                                value={password || ""}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className={cn("w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/20 transition-all font-mono", !forceLight && "dark:bg-zinc-950 dark:border-zinc-800 dark:text-zinc-200 dark:placeholder:text-zinc-600")}
-                            />
+                            <div className="relative">
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    placeholder="Set a password (min 4 chars)"
+                                    value={password || ""}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className={cn("w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/20 transition-all font-mono pr-10", !forceLight && "dark:bg-zinc-950 dark:border-zinc-800 dark:text-zinc-200 dark:placeholder:text-zinc-600")}
+                                />
+                                <button
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className={cn("absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors", !forceLight && "dark:text-zinc-500 dark:hover:text-zinc-300")}
+                                    type="button"
+                                    aria-label={showPassword ? "Hide password" : "Show password"}
+                                >
+                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
+                            </div>
                             <p className="text-[10px] text-zinc-500">
                                 Anyone with the link will need to enter this password.
                             </p>

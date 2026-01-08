@@ -611,8 +611,8 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
 
   // Auto-Save Effect
   useEffect(() => {
-    // Only auto-save in Text Mode, if editable, and has slug
-    if (type === 'text' && slug && canEdit && !isLocked) {
+    // Auto-save in Text or JSON Mode, if editable, and has slug
+    if ((type === 'text' || type === 'json') && slug && canEdit && !isLocked) {
       // Prevent double calls or saving while already saving (though guard handles it)
       handleSave(true);
     }
@@ -706,29 +706,14 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
             </button>
 
             {/* Save Button */}
-            {type === 'text' ? (
-              <div className={cn("flex items-center gap-2 px-3 text-xs font-medium text-zinc-500 select-none", type !== 'text' && "dark:text-zinc-400")}>
-                {isSaving ? (
-                  <span>Saving...</span>
-                ) : (
-                  <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Saved</span>
-                )}
-              </div>
-            ) : (
-              <button
-                onClick={() => handleSave(false)}
-                disabled={!slug || isSaving}
-                className={cn(
-                  "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium border transition-colors",
-                  !slug
-                    ? "bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600 border-zinc-200 dark:border-zinc-800 cursor-not-allowed"
-                    : "bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-lg shadow-blue-900/20"
-                )}
-              >
-                <Save size={14} />
-                <span className="hidden lg:inline">{isSaving ? "Saving..." : "Save"}</span>
-              </button>
-            )}
+            {/* Save Status Indicator (Auto-save) */}
+            <div className={cn("flex items-center gap-2 px-3 text-xs font-medium text-zinc-500 select-none", type !== 'text' && "dark:text-zinc-400")}>
+              {isSaving ? (
+                <span>Saving...</span>
+              ) : (
+                <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Saved</span>
+              )}
+            </div>
 
             <button
               onClick={() => setIsShareOpen(true)}

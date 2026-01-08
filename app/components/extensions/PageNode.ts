@@ -54,8 +54,8 @@ export const PageNode = Node.create<PageOptions>({
                 'data-page': 'true',
                 'class': 'editor-page',
                 'style': `
+                    height: ${pageHeight}px; /* Fixed height */
                     min-height: ${pageHeight}px;
-                    max-height: ${pageHeight}px;
                     padding-top: ${marginTop}px;
                     padding-bottom: ${marginBottom}px;
                     padding-left: ${marginLeft}px;
@@ -64,8 +64,10 @@ export const PageNode = Node.create<PageOptions>({
                     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
                     margin-bottom: ${this.options.pageGap}px;
                     box-sizing: border-box;
-                    overflow: hidden;
+                    overflow: hidden; /* Clip overflow */
                     position: relative;
+                    display: flex;
+                    flex-direction: column;
                 `.replace(/\s+/g, ' ').trim(),
             }),
             [
@@ -74,8 +76,10 @@ export const PageNode = Node.create<PageOptions>({
                     'class': 'page-content',
                     'data-page-content': 'true',
                     'style': `
-                        min-height: ${contentHeight}px;
-                        overflow: visible;
+                        flex: 1; /* Fill remaining vertical space */
+                        display: flex;
+                        flex-direction: column;
+                        overflow: hidden; /* Ensure children scroll, not this */
                     `.replace(/\s+/g, ' ').trim(),
                 },
                 0, // Content goes here
