@@ -200,8 +200,13 @@ body {
 pre[class*="bg-zinc"] {
     position: relative !important;
     display: block !important;
-    /* Max height accounts for page margins - ensures scrollbar appears */
-    max-height: 700px !important;
+    /* Flex behavior for expanding in remaining space */
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    /* Allow flex item to shrink below content size */
+    max-height: 100% !important;
+    /* Ensure it doesn't overflow parent */
+    max-width: 100% !important;
     overflow-y: auto !important;
     overflow-x: auto !important;
     white-space: pre !important;
