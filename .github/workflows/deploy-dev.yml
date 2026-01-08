@@ -1,0 +1,29 @@
+name: Next.js CI/CD for Development Branch [Jsonrock Softcolon]
+
+on:
+  push:
+    branches: ['development']
+
+jobs:
+  build:
+    runs-on: jsonrock dev
+    environment: development
+    env:
+      PORT: 3003
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Application
+        run: npm run build
