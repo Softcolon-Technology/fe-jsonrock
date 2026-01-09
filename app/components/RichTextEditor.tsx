@@ -30,7 +30,7 @@ const FontSize = Extension.create({
     name: 'fontSize',
     addOptions() {
         return {
-            types: ['textStyle', 'paragraph', 'heading'],
+            types: ['textStyle', 'paragraph', 'heading', 'listItem'],
         };
     },
     addGlobalAttributes() {
@@ -43,19 +43,16 @@ const FontSize = Extension.create({
                         parseHTML: element => {
                             const val = element.style.fontSize;
                             if (!val) return null;
-                            // Convert px to pt (1px = 0.75pt) if needed
                             if (val.includes('px')) {
                                 const px = parseFloat(val);
                                 return Math.round(px * 0.75).toString();
                             }
-                            // Keep raw number or remove pt
                             return val.replace(/['"]+/g, '').replace(/pt/, '');
                         },
                         renderHTML: attributes => {
                             if (!attributes.fontSize) {
                                 return {};
                             }
-                            // Render as PT with !important to ensure override
                             return {
                                 style: `font-size: ${attributes.fontSize}pt !important`,
                             };
@@ -67,10 +64,20 @@ const FontSize = Extension.create({
     },
     addCommands() {
         return {
-            setFontSize: (fontSize: string) => ({ chain }: any) => {
-                return chain()
-                    .setMark('textStyle', { fontSize })
-                    .run();
+            setFontSize: (fontSize: string) => ({ chain, state, commands }: any) => {
+                // If selection is inside a list item, update the list item too
+                const { selection } = state;
+                const { $from, $to } = selection;
+
+                const chainBuilder = chain().setMark('textStyle', { fontSize });
+
+                state.doc.nodesBetween($from.pos, $to.pos, (node: any, pos: number) => {
+                    if (node.type.name === 'listItem') {
+                        chainBuilder.updateAttributes('listItem', { fontSize });
+                    }
+                });
+
+                return chainBuilder.run();
             },
             unsetFontSize: () => ({ chain }: any) => {
                 return chain()
@@ -155,7 +162,7 @@ const Toolbar = ({ editor, forceLight }: { editor: Editor | null, forceLight?: b
     }, [editor]);
 
     const getCurrentFontSize = () => {
-        if (!editor) return '16'; // Default to 16
+        if (!editor) return '14'; // Default to 14
         const markAttrs = editor.getAttributes('textStyle');
         if (markAttrs.fontSize) return markAttrs.fontSize;
         const { $from } = editor.state.selection;
@@ -163,7 +170,7 @@ const Toolbar = ({ editor, forceLight }: { editor: Editor | null, forceLight?: b
         if ((parent.type.name === 'paragraph' || parent.type.name === 'heading') && parent.attrs.fontSize) {
             return parent.attrs.fontSize;
         }
-        return '16'; // Default
+        return '14'; // Default
     };
 
     if (!editor) return null;
@@ -281,7 +288,12 @@ const Toolbar = ({ editor, forceLight }: { editor: Editor | null, forceLight?: b
             <ToolbarDivider forceLight={forceLight} />
 
             <ToolbarButton
-                onClick={() => editor.chain().focus().toggleBulletList().run()}
+                onClick={() => {
+                    const currentSize = getCurrentFontSize();
+                    editor.chain().focus().toggleBulletList().run();
+                    // Sync font size to list items immediately
+                    (editor as any).commands.setFontSize(currentSize);
+                }}
                 isActive={editor.isActive('bulletList')}
                 title="Bullet List"
                 forceLight={forceLight}
@@ -289,7 +301,12 @@ const Toolbar = ({ editor, forceLight }: { editor: Editor | null, forceLight?: b
                 <List className="w-4 h-4" />
             </ToolbarButton>
             <ToolbarButton
-                onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                onClick={() => {
+                    const currentSize = getCurrentFontSize();
+                    editor.chain().focus().toggleOrderedList().run();
+                    // Sync font size to list items immediately
+                    (editor as any).commands.setFontSize(currentSize);
+                }}
                 isActive={editor.isActive('orderedList')}
                 title="Ordered List"
                 forceLight={forceLight}
@@ -374,12 +391,12 @@ const RichTextEditor = ({ content, onChange, readOnly, remoteContent, forceLight
                 codeBlock: false,
                 bulletList: {
                     HTMLAttributes: {
-                        class: 'list-disc list-outside ml-4',
+                        class: 'list-disc list-outside ml-6',
                     },
                 },
                 orderedList: {
                     HTMLAttributes: {
-                        class: 'list-decimal list-outside ml-4',
+                        class: 'list-decimal list-outside ml-6',
                     },
                 },
                 listItem: {
