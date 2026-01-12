@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyShareLinkPassword } from "@/lib/shareLinks";
+import { verifyShareLinkPassword, getShareLink } from "@/lib/shareLinks";
 
 interface Params {
   params: Promise<{
@@ -126,16 +126,70 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Record not found" }, { status: 404 });
     }
 
+    // Unified Response Structure for POST (Unlock)
+    if (record.type == "json") {
+      return NextResponse.json({
+        data: JSON.parse(record.json),
+        type: record.type,
+        slug: record.slug,
+        isPrivate: record.isPrivate,
+        accessType: record.accessType,
+        mode: record.mode
+      });
+    }
+
     return NextResponse.json({
-      json: record.json,
-      mode: record.mode,
       type: record.type,
+      data: record.json,
+      slug: record.slug,
       isPrivate: record.isPrivate,
       accessType: record.accessType,
+      mode: record.mode
     });
 
   } catch (error) {
     console.error("Error verifying password", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function GET(req: NextRequest, { params }: Params) {
+  const { slug } = await params;
+
+  if (!slug) {
+    return NextResponse.json({ error: "Slug is required" }, { status: 400 });
+  }
+
+  try {
+    const record = await getShareLink(slug);
+
+
+    if (!record) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // SECURITY: If private, do NOT return data
+    if (record.isPrivate) {
+      return NextResponse.json({
+        data: null, // Masked
+        type: record.type,
+        slug: record.slug,
+        isPrivate: true,
+        accessType: record.accessType,
+        mode: record.mode
+      });
+    }
+
+    return NextResponse.json({
+      type: record.type,
+      data: (record.type == "text") ? record.json : JSON.parse(record.json),
+      slug: record.slug,
+      isPrivate: record.isPrivate,
+      accessType: record.accessType,
+      mode: record.mode
+    });
+  } catch (error) {
+    console.error("API Error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

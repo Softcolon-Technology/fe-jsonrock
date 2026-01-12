@@ -7,8 +7,8 @@ const elk = new ELK();
 const layoutOptions = {
     "elk.algorithm": "layered",
     "elk.direction": "RIGHT",
-    "elk.layered.spacing.nodeNodeBetweenLayers": "100",
-    "elk.spacing.nodeNode": "80", // Vertical gap
+    "elk.layered.spacing.nodeNodeBetweenLayers": "180",
+    "elk.spacing.nodeNode": "100", // Vertical gap
     "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
     "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
 };

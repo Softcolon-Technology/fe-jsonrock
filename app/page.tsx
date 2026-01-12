@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { Edge, Node } from "reactflow";
 import {
   Code2,
   GitGraph,
-  Network,
   Share2,
   Menu,
   LayoutTemplate,
@@ -22,7 +22,8 @@ import {
   AlertCircle,
   UploadCloud,
   X,
-  MessageSquarePlus
+  MessageSquarePlus,
+  Loader2
 } from "lucide-react";
 
 import { getJsonParseError } from "@/lib/json-error";
@@ -38,7 +39,6 @@ import Cookies from "js-cookie";
 
 import JsonEditor from "./components/JsonEditor";
 import GraphView from "./components/GraphView";
-import JsonTreeView from "./components/JsonTreeView";
 import TreeExplorer from "./components/TreeExplorer";
 import { getLayoutedElements } from "@/lib/graph-layout";
 import { cn } from "@/lib/utils";
@@ -47,9 +47,6 @@ import dynamic from "next/dynamic";
 
 const RichTextEditor = dynamic(() => import("./components/RichTextEditor"), { ssr: false });
 
-
-
-// Define serialization manually to avoid import issues or just matching what we did in page.tsx
 type SerializedShareLinkRecord = Omit<ShareLinkRecord, "createdAt" | "_id"> & {
   createdAt: string;
   _id?: string;
@@ -80,18 +77,28 @@ interface HomeProps {
 }
 
 export default function Home({ initialRecord, featureMode = "json" }: HomeProps) {
+  const router = useRouter();
+  const params = useParams();
+  const urlSlug = params?.slug as string | undefined;
+
   const [jsonInput, setJsonInput] = useState<string>(
-    initialRecord?.json ||
-    (featureMode === 'text' ? 'Type your text here...' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}')
+    initialRecord
+      ? initialRecord.json
+      : (featureMode === 'text' ? '<p style="font-size: 14pt">Type your text here...</p>' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}')
   );
+
+  const lastSavedContent = React.useRef<string>(initialRecord?.json || jsonInput);
+
   const [parsedJson, setParsedJson] = useState<any>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [activeTab, setActiveTab] = useState<"visualize" | "tree" | "formatter">(
     initialRecord?.mode || "visualize"
   );
+
   const [type, setType] = useState<"json" | "text">(initialRecord?.type || featureMode);
-  const [fontSize, setFontSize] = useState(14); // Text Mode Font Size
+  // Remove unused setFontSize if not used, or keep if future proofing
+  const [fontSize, setFontSize] = useState(14);
 
   const [isValid, setIsValid] = useState(true);
   const [layouting, setLayouting] = useState(false);
@@ -103,52 +110,132 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   // 2. remoteCode = Source of Truth for Editor Display (Updated ONLY by Socket/System)
   const [remoteCode, setRemoteCode] = useState<{ code: string; nonce: number } | null>(null);
 
-  // Formatter State moved up to group with others or left here, but socket logic removed from here
   const [tabSize, setTabSize] = useState<string>("2");
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // Loading State
+  const [isLoading, setIsLoading] = useState(!!urlSlug && initialRecord?.slug !== urlSlug);
 
   // Share State
   const [slug, setSlug] = useState<string | null>(initialRecord?.slug || null);
   const [isPrivate, setIsPrivate] = useState(initialRecord?.isPrivate || false);
   const [accessType, setAccessType] = useState<ShareAccessType>(initialRecord?.accessType || "viewer");
-  // Helper to determine if current user can edit:
-  // - If new file (!slug): Yes
-  // - If we have an existing record, check accessType.
-  // Note: For a public link, 'viewer' means read-only.
-  // We initialize based on record. If I just created it, I essentially have 'editor' rights until reload?
-  // For simplicity: If !slug => 'editor' (implied). If slug => use accessType.
-  // But wait, if I Open a Public-Viewer link, I am Viewer.
-  // If I Create a Public-Viewer link, I am... ?
-  // Let's rely on a separate specific state for "My Permission" vs "Record Permission" if needed.
-  // But for this scope, let's say:
-  // If initialRecord is present, we obey its accessType.
-  // If not, we are Editors.
+
   const [isOwner, setIsOwner] = useState(false);
   const [canEdit, setCanEdit] = useState(true);
 
-  // Check ownership on load
-  useEffect(() => {
-    if (initialRecord?.slug) {
-      const ownedSlugs = Cookies.get("json-cracker-owned");
-      if (ownedSlugs) {
-        try {
-          const parsed = JSON.parse(ownedSlugs);
-          if (Array.isArray(parsed) && parsed.includes(initialRecord.slug)) {
-            setIsOwner(true);
-            setCanEdit(true); // Owners always edit
-            return;
-          }
-        } catch (e) { console.error("Cookie parse error", e); }
-      }
-      // Fallback to accessType if not owner
-      // Note: Initial record AccessType logic
-      setCanEdit(initialRecord.accessType === "editor");
+  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
+  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
+  // Sync state when URL slug changes (Navigation / Refresh)
+  // Helper to determine ownership
+  const checkOwnership = useCallback((targetSlug: string) => {
+    const ownedSlugs = Cookies.get("json-cracker-owned");
+    if (ownedSlugs) {
+      try {
+        const parsed = JSON.parse(ownedSlugs);
+        if (Array.isArray(parsed) && parsed.includes(targetSlug)) {
+          return true;
+        }
+      } catch (e) { console.error("Cookie parse error", e); }
+    }
+    return false;
+  }, []);
+
+  const syncFromData = useCallback((data: any) => {
+    let content = "";
+    // Handle new API structure { data: ..., type: ... }
+    if (data.type === 'json' && typeof data.data === 'object') {
+      content = JSON.stringify(data.data, null, 2);
     } else {
-      // New file
+      // Fallback or Text mode
+      content = data.data || data.json || "";
+    }
+
+    setJsonInput(content);
+    setSlug(data.slug || null);
+    setIsPrivate(data.isPrivate || false);
+    setAccessType(data.accessType || "viewer");
+    setType(data.type || "json");
+    setActiveTab(data.mode || "visualize");
+    setRemoteCode({ code: content, nonce: Date.now() });
+
+    // Handle Locking
+    if (data.isPrivate) {
+      setIsPersistedPrivate(true);
+      // If content is missing/masked, it is locked.
+      const isLockedState = (data.data === null || data.data === undefined);
+      setIsLocked(isLockedState);
+    } else {
+      setIsLocked(false);
+      setIsPersistedPrivate(false);
+    }
+
+    // CRITICAL: Update lastSavedContent to current loaded content
+    lastSavedContent.current = content;
+
+    if (data.slug) {
+      const isOwned = checkOwnership(data.slug);
+      if (isOwned) {
+        setIsOwner(true);
+        setCanEdit(true);
+      } else {
+        setCanEdit(data.accessType === "editor");
+        setIsOwner(false);
+      }
+    } else {
       setIsOwner(true);
       setCanEdit(true);
     }
-  }, [initialRecord]);
+  }, [checkOwnership]);
+
+  // Sync state when URL slug changes (Navigation / Refresh)
+  useEffect(() => {
+    if (urlSlug) {
+      // ALWAYS Fetch from API on navigation/load
+      setIsLoading(true);
+      const controller = new AbortController();
+
+      fetch(`/api/share/${urlSlug}`, { signal: controller.signal })
+        .then(res => {
+          if (!res.ok) throw new Error("Failed to load");
+          return res.json();
+        })
+        .then(data => {
+          if (data && !data.error) {
+            syncFromData(data);
+          }
+        })
+        .catch(err => {
+          if (err.name !== 'AbortError') {
+            console.error("Fetch error", err);
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsLoading(false);
+          }
+        });
+
+      return () => controller.abort();
+    } else {
+      // NAVIGATED TO ROOT (New File)
+      const defaultContent = featureMode === 'text' ? '<p style="font-size: 14pt">Type your text here...</p>' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
+
+      if (slug !== null) {
+        setJsonInput(defaultContent);
+        setSlug(null);
+        setIsPrivate(false);
+        setAccessType("viewer");
+        setType(featureMode);
+        setActiveTab("visualize");
+        setIsOwner(true);
+        setCanEdit(true);
+        setParsedJson(null);
+        setRemoteCode({ code: defaultContent, nonce: Date.now() });
+        lastSavedContent.current = defaultContent;
+      }
+      setIsLoading(false);
+    }
+  }, [urlSlug, featureMode, syncFromData]);
 
   const addOwnership = (newSlug: string) => {
     const owned = Cookies.get("json-cracker-owned");
@@ -171,6 +258,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   const [isPersistedPrivate, setIsPersistedPrivate] = useState(
     initialRecord?.isPrivate || false
   );
+
   const [isShareOpen, setIsShareOpen] = useState(false);
 
   // Locked State for Private Links
@@ -228,20 +316,29 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     };
 
     const onCodeChange = (newCode: string) => {
-      setJsonInput(newCode); // Update Save State
-      setRemoteCode({ code: newCode, nonce: Date.now() }); // Update Editor Display
+      // If we receive an update, we treat it as the source of truth
+      setJsonInput(newCode);
+      setRemoteCode({ code: newCode, nonce: Date.now() });
     };
 
-    if (socket.connected) {
-      onConnect();
+    // Explicitly connect when this component mounts/activates
+    if (!socket.connected) {
+      socket.connect();
     }
 
     socket.on("connect", onConnect);
     socket.on("code-change", onCodeChange);
 
+    // Handle immediate connection case
+    if (socket.connected) {
+      onConnect();
+    }
+
     return () => {
       socket.off("connect", onConnect);
       socket.off("code-change", onCodeChange);
+      // Disconnect when leaving the page/component to save resources
+      socket.disconnect();
     };
   }, [slug, isPrivate, isLocked]);
 
@@ -283,18 +380,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
       }
 
       // Success
-      setJsonInput(data.json);
-      setJsonInput(data.json);
-      setRemoteCode({ code: data.json, nonce: Date.now() }); // Force Editor Update
-      setActiveTab(data.mode);
-      setIsPrivate(data.isPrivate);
-      setType(data.type || "json");
-      setAccessType(data.accessType || "viewer");
-      // If we unlocked successfully, we essentially have access.
-      // If the link is "viewer" only, we are viewers?
-      // Yes, if it is a Private Viewer link, even with password you are a viewer.
-      // If it is Private Editor, you are Editor.
-      setCanEdit(data.accessType === "editor");
+      syncFromData(data);
 
       // Check if I am actually the owner (maybe I created it on this device?)
       const ownedSlugs = Cookies.get("json-cracker-owned");
@@ -310,8 +396,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
 
       setIsPersistedPrivate(data.isPrivate);
       setIsLocked(false);
-      // Do NOT clear password, keep it for save validation
-      // setPassword(""); 
 
     } catch (err) {
       setUnlockError((err as Error).message);
@@ -321,14 +405,14 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   };
 
   const handleCancelUnlock = () => {
-    window.location.href = "/";
+    router.push("/");
   };
 
   // New Button Handler
   const handleNew = async (specificType?: 'json' | 'text') => {
     const targetType = (typeof specificType === 'string') ? specificType : type;
     const isText = targetType === 'text';
-    const initialContent = isText ? 'Type your text here...' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
+    const initialContent = isText ? '<p style="font-size: 14pt">Type your text here...</p>' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
 
     setJsonInput(initialContent);
     setSlug(null);
@@ -364,7 +448,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         setType(data.type || targetType);
         addOwnership(data.slug);
         const route = (data.type || targetType) === 'text' ? '/share/text/' : '/share/';
-        window.history.pushState({}, "", `${route}${data.slug}`);
+        router.push(`${route}${data.slug}`);
       }
     } catch (e) {
       console.error("Failed to create new record", e);
@@ -403,6 +487,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
           addOwnership(slug);
         }
         if (isPrivate) setIsPersistedPrivate(true);
+        lastSavedContent.current = jsonInput; // Update last saved reference
         if (!silent) showAlert("Saved Successfully", "Your changes have been saved.", "success");
       } else {
         const err = data;
@@ -488,7 +573,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
 
       // Success - Redirect
       addOwnership(data.slug);
-      window.location.href = `/share/${data.slug}`;
+      router.push(`/share/${data.slug}`);
 
     } catch (error) {
       console.error(error);
@@ -534,7 +619,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         setSlug(newSlug);
         addOwnership(newSlug); // Mark as owner of new/updated slug
         const route = type === 'text' ? '/share/text/' : '/share/';
-        window.history.pushState({}, "", `${route}${newSlug}`);
+        router.push(`${route}${newSlug}`);
       }
 
       // Update local state
@@ -613,6 +698,10 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   useEffect(() => {
     // Auto-save in Text or JSON Mode, if editable, and has slug
     if ((type === 'text' || type === 'json') && slug && canEdit && !isLocked) {
+
+      // Check if content actually changed from last save
+      if (debouncedSaveContent === lastSavedContent.current) return;
+
       // Prevent double calls or saving while already saving (though guard handles it)
       handleSave(true);
     }
@@ -643,7 +732,14 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   const [mobileTab, setMobileTab] = useState<"editor" | "viewer">("editor");
 
   return (
-    <div className={cn("flex h-[100dvh] w-screen bg-gray-50 text-zinc-800 font-sans overflow-hidden", type !== 'text' && "dark:bg-zinc-950 dark:text-zinc-300")}>
+    <div className={cn("flex h-[100dvh] w-screen bg-gray-50 text-zinc-800 font-sans overflow-hidden", type !== 'text' && "dark:bg-zinc-950 dark:text-zinc-300 relative")}>
+
+      {/* Global Loading Overlay */}
+      {isLoading && !isLocked && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center pointer-events-none">
+          <Loader2 className="w-10 h-10 animate-spin text-emerald-600" />
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -1134,5 +1230,3 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     </div >
   );
 }
-
-

@@ -24,7 +24,7 @@ const JsonNode = ({ data, selected }: NodeProps<GraphNodeData>) => {
     return (
         <div
             className={cn(
-                "min-w-[220px] rounded-lg border bg-white dark:bg-[#09090b] shadow-xl transition-all duration-200",
+                "min-w-[220px] max-w-[300px] rounded-lg border bg-white dark:bg-[#09090b] shadow-xl transition-all duration-200",
                 selected ? "border-emerald-500/50 ring-1 ring-emerald-500/20" : "border-zinc-200 dark:border-zinc-800"
             )}
         >
@@ -52,13 +52,13 @@ const JsonNode = ({ data, selected }: NodeProps<GraphNodeData>) => {
             {/* Body */}
             <div className="p-2 space-y-1">
                 {data.properties?.map((prop, idx) => (
-                    <div key={idx} className="flex items-center gap-3 px-1 hover:bg-zinc-100 dark:hover:bg-zinc-900/50 rounded py-0.5 transition-colors">
-                        <span className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400 shrink-0">
+                    <div key={idx} className="flex items-start gap-3 px-1 hover:bg-zinc-100 dark:hover:bg-zinc-900/50 rounded py-0.5 transition-colors">
+                        <span className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400 shrink-0 mt-0.5">
                             {prop.key}:
                         </span>
                         <span
                             className={cn(
-                                "truncate font-mono text-[10px]",
+                                "font-mono text-[10px] line-clamp-2 break-all whitespace-normal leading-tight",
                                 // @ts-ignore
                                 TypeColor[prop.type] || "text-zinc-600 dark:text-zinc-300"
                             )}
@@ -69,7 +69,7 @@ const JsonNode = ({ data, selected }: NodeProps<GraphNodeData>) => {
                 ))}
                 {data.value && (
                     <div className="flex items-center gap-2 px-1">
-                        <span className={cn("font-mono text-xs",
+                        <span className={cn("font-mono text-xs line-clamp-2 break-all whitespace-normal leading-tight",
                             // @ts-ignore
                             TypeColor[data.type] || "text-zinc-600 dark:text-zinc-300")
                         }>
