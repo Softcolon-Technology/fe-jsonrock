@@ -1024,7 +1024,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
               </div>
             ) : (
               <>
-                <div className={cn("h-full w-full pl-16", activeTab !== "visualize" && "hidden")}>
+                <div className={cn("h-full w-full", activeTab !== "visualize" && "hidden")}>
                   {layouting ? (
                     <div className="flex h-full items-center justify-center text-zinc-500 gap-2">
                       <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
