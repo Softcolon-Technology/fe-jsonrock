@@ -23,7 +23,9 @@ import {
   UploadCloud,
   X,
   MessageSquarePlus,
-  Loader2
+  Loader2,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 import { getJsonParseError } from "@/lib/json-error";
@@ -267,6 +269,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   );
   const [unlockLoading, setUnlockLoading] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Refs for stable callback access
   const slugRef = React.useRef(slug);
@@ -1164,14 +1167,14 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
               </div>
 
               <div className="space-y-4">
-                <div className="space-y-2">
+                <div className="relative">
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="Enter password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className={cn(
-                      "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50",
+                      "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 pr-10",
                       type === 'text'
                         ? "bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-emerald-500"
                         : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:border-emerald-500"
@@ -1180,6 +1183,16 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
                       if (e.key === "Enter") handleUnlock();
                     }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className={cn(
+                      "absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700 transition-colors",
+                      type !== 'text' && "dark:text-zinc-400 dark:hover:text-zinc-200"
+                    )}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
 
                 {unlockError && (
