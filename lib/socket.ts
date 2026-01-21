@@ -11,9 +11,10 @@ export const getSocket = () => {
         socket = io(url, {
             path: "/api/socket/io",
             addTrailingSlash: false,
-            transports: ["websocket", "polling"], // Try websocket first if possible? No, defaults are fine usually but let's be explicit
+            transports: ["websocket", "polling"],
             reconnection: true,
             reconnectionAttempts: 5,
+            autoConnect: false, // Critical: Only connect when explicitly requested
         });
     }
     return socket;

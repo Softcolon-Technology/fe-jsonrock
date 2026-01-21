@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       accessType,
       password: isPrivateFlag ? password : undefined,
       type: type || 'json',
+      slug: slug || ''
     });
 
     return NextResponse.json({

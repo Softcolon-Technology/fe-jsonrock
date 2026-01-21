@@ -215,6 +215,26 @@ pre[class*="bg-zinc"] {
     scrollbar-color: #d4d4d8 transparent;
 }
 
+/* Rich Text Editor List Styling */
+.ProseMirror li {
+    /* Ensure the list item itself handles font size for the marker */
+    transition: font-size 0.1s ease;
+}
+
+.ProseMirror li::marker {
+    /* Explicitly inherit font size */
+    font-size: inherit;
+    color: inherit;
+}
+
+/* Ensure markers aren't clipped */
+.ProseMirror ul,
+.ProseMirror ol {
+    padding-left: 3rem !important;
+    /* Increased to 3rem for safety */
+    overflow: visible !important;
+}
+
 .page-code-block::-webkit-scrollbar,
 .ProseMirror pre::-webkit-scrollbar,
 .editor-page pre::-webkit-scrollbar,
