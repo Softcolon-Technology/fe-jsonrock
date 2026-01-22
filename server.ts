@@ -33,9 +33,15 @@ app.prepare().then(() => {
             // console.log(`Client ${socket.id} joined room ${slug}`);
         });
 
+
         socket.on("code-change", (data: { slug: string; newCode: string }) => {
             // Broadcast to everyone ELSE in the room
             socket.to(data.slug).emit("code-change", data.newCode);
+        });
+
+        socket.on("leave-room", (slug: string) => {
+            socket.leave(slug);
+            // console.log(`Client ${socket.id} left room ${slug}`);
         });
 
         socket.on("disconnect", () => {

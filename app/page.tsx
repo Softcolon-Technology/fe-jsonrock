@@ -305,11 +305,11 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     }, 100);
   }, []); // ID IS STABLE NOW
 
-  // Socket Effect
+  // Socket Effect - OPTIMIZED for Production
   useEffect(() => {
     if (!slug) return;
 
-    // Connect only when we have access.
+    // Skip socket connection for locked private content (no collaboration possible)
     if (isPrivate && isLocked) return;
 
     const socket = getSocket();
@@ -324,9 +324,13 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
       setRemoteCode({ code: newCode, nonce: Date.now() });
     };
 
-    // Explicitly connect when this component mounts/activates
+    // CRITICAL FIX: Only connect if not already connected
+    // This prevents reconnection churn when slug changes
     if (!socket.connected) {
       socket.connect();
+    } else {
+      // Already connected, just join the new room
+      onConnect();
     }
 
     socket.on("connect", onConnect);
@@ -338,12 +342,14 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     }
 
     return () => {
+      // CRITICAL FIX: Only remove OUR listeners, don't disconnect
+      // This prevents reconnection churn when component re-renders
       socket.off("connect", onConnect);
       socket.off("code-change", onCodeChange);
-      // Disconnect when leaving the page/component to save resources
-      socket.disconnect();
+      // Leave the room but stay connected for potential reuse
+      socket.emit("leave-room", slug);
     };
-  }, [slug, isPrivate, isLocked]);
+  }, [slug]); // CRITICAL FIX: Only depend on slug, not isPrivate/isLocked
 
   // Alert State
   const [alertConfig, setAlertConfig] = useState<{
