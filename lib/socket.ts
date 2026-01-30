@@ -7,7 +7,7 @@ let socket: Socket | null = null;
 export const getSocket = () => {
     if (!socket) {
         // use undefined to connect to window.location (handles ngrok automatically)
-        const url = process.env.NEXT_PUBLIC_SITE_URL || undefined;
+        const url = process.env.NODE_BACKEND_URL || "http://localhost:3005";
         socket = io(url, {
             path: "/api/socket/io",
             addTrailingSlash: false,

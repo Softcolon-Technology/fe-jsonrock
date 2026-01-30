@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { getShareLink } from "../../../lib/shareLinks";
 import Home from "../../page";
 
 interface Props {
@@ -8,27 +7,36 @@ interface Props {
 
 export default async function SharePage({ params }: Props) {
   const resolvedParams = await params;
-  const record = await getShareLink(resolvedParams.slug);
 
-  if (!record) {
+  let initialRecord: any;
+
+  try {
+    // Fetch from backend API
+    const res = await fetch(`${process.env.NODE_BACKEND_URL}/api/share/${resolvedParams.slug}`, {
+      cache: 'no-store'
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+
+      initialRecord = {
+        slug: data.slug,
+        type: data.type || "json",
+        json: data.isPrivate ? "" : (typeof data.data === 'string' ? data.data : JSON.stringify(data.data)),
+        mode: data.mode || "visualize",
+        isPrivate: data.isPrivate || false,
+        accessType: data.accessType || "editor",
+        createdAt: new Date().toISOString(),
+      };
+    } else {
+      // Record doesn't exist - redirect to home
+      redirect("/");
+    }
+  } catch (error) {
+    console.error("Error fetching share link:", error);
     redirect("/");
   }
 
-  if (record.isPrivate) {
-    record.json = ""; // Strip JSON for security
-    // We shouldn't blindly pass the passwordHash or other internal fields if not needed, 
-    // but the error is specifically about serialization of _id and Date.
-  }
-
-  // Serialize for Client Component
-  // Convert _id to string and Date to ISO string
-  const serializedRecord = {
-    ...record,
-    _id: record._id?.toString(),
-    createdAt: record.createdAt.toISOString(),
-  };
-
-  return <Home initialRecord={serializedRecord} />;
+  return <Home initialRecord={initialRecord} />;
 }
-
 
