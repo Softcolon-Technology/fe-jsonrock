@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "next dev",
     "build": "next build",
-    "start": "cross-env NODE_ENV=production tsx server.ts",
+    "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
@@ -34,7 +34,6 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "reactflow": "^11.11.2",
-    "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "tailwind-merge": "^3.4.0"
   },
@@ -43,11 +42,9 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",
-    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
