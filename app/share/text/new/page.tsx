@@ -15,7 +15,11 @@ export default function NewTextDocPage() {
                 const res = await fetch('/api/share', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'text', accessType: 'editor' })
+                    body: JSON.stringify({
+                        type: 'text',
+                        accessType: 'editor',
+                        json: '<p style="font-size: 14pt">Type your text here...</p>'
+                    })
                 });
 
                 if (res.ok) {

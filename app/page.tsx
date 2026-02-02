@@ -322,6 +322,8 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
       // If we receive an update, we treat it as the source of truth
       setJsonInput(newCode);
       setRemoteCode({ code: newCode, nonce: Date.now() });
+      // CRITICAL: Mark as saved to prevent duplicate auto-save from this browser
+      lastSavedContent.current = newCode;
     };
 
     // CRITICAL FIX: Only connect if not already connected
@@ -349,7 +351,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
       // Leave the room but stay connected for potential reuse
       socket.emit("leave-room", slug);
     };
-  }, [slug]); // CRITICAL FIX: Only depend on slug, not isPrivate/isLocked
+  }, [slug, isLocked]); // CRITICAL: Include isLocked so socket connects after unlock
 
   // Alert State
   const [alertConfig, setAlertConfig] = useState<{
@@ -559,7 +561,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     if (!file) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      showAlert("Upload Failed", "File size exceeds the 5MB limit.", "error");
+      showAlert("Upload Failed", "File size exceeds the 2MB limit.", "error");
       e.target.value = ""; // Reset input
       setIsUploadOpen(false);
       return;

@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { getShareLink } from "@/lib/shareLinks";
 import Home from "../../../page"; // Imports app/page.tsx
 
 interface Props {
@@ -8,28 +7,50 @@ interface Props {
 
 export default async function ShareTextPage({ params }: Props) {
     const resolvedParams = await params;
-    const record = await getShareLink(resolvedParams.slug);
 
     let initialRecord: any;
 
-    if (record) {
-        if (record.isPrivate) {
-            record.json = ""; // Strip Content for security
+    try {
+        // Fetch from backend API instead of using deprecated lib
+        const res = await fetch(`${process.env.NODE_BACKEND_URL}/api/share/${resolvedParams.slug}`, {
+            cache: 'no-store'
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+
+            // Backend returns { data, type, slug, isPrivate, accessType, mode }
+            initialRecord = {
+                slug: data.slug,
+                type: data.type || "text",
+                json: data.isPrivate ? "" : (typeof data.data === 'string' ? data.data : JSON.stringify(data.data)),
+                mode: data.mode || "visualize",
+                isPrivate: data.isPrivate || false,
+                accessType: data.accessType || "editor",
+                createdAt: new Date().toISOString(),
+            };
+        } else {
+            // Record doesn't exist - create new
+            initialRecord = {
+                slug: resolvedParams.slug,
+                type: "text",
+                json: "",
+                mode: "visualize",
+                isPrivate: false,
+                accessType: "editor",
+                createdAt: new Date().toISOString(),
+            };
         }
-        initialRecord = {
-            ...record,
-            _id: record._id?.toString(),
-            createdAt: record.createdAt.toISOString(),
-        };
-    } else {
-        // New Slug Creation Mode
+    } catch (error) {
+        console.error("Error fetching share link:", error);
+        // Fallback to new slug creation on error
         initialRecord = {
             slug: resolvedParams.slug,
-            type: "text", // Force text type for this route
+            type: "text",
             json: "",
             mode: "visualize",
             isPrivate: false,
-            accessType: "editor", // Allow editing for new slug
+            accessType: "editor",
             createdAt: new Date().toISOString(),
         };
     }
