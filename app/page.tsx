@@ -123,12 +123,8 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   const [accessType, setAccessType] = useState<ShareAccessType>(initialRecord?.accessType || "viewer");
 
   const [isOwner, setIsOwner] = useState(false);
-  const [canEdit, setCanEdit] = useState(true);
 
-  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
-  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
-  // Sync state when URL slug changes (Navigation / Refresh)
-  // Helper to determine ownership
+  // Helper to determine ownership (moved before canEdit initialization)
   const checkOwnership = useCallback((targetSlug: string) => {
     const ownedSlugs = Cookies.get("json-cracker-owned");
     if (ownedSlugs) {
@@ -141,6 +137,18 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     }
     return false;
   }, []);
+
+  // Initialize canEdit based on initialRecord to prevent race condition
+  const [canEdit, setCanEdit] = useState(() => {
+    if (!initialRecord?.slug) return true; // New document - always editable
+    const isOwned = checkOwnership(initialRecord.slug);
+    if (isOwned) return true; // Owner always can edit
+    return initialRecord.accessType === "editor"; // Non-owner: check accessType
+  });
+
+  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
+  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
+  // Sync state when URL slug changes (Navigation / Refresh)
 
   const syncFromData = useCallback((data: any) => {
     let content = "";

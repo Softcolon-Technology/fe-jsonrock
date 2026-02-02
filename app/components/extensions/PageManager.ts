@@ -5,9 +5,9 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
  * PageManager Extension
  * 
  * Manages automatic page creation and content overflow:
- * 1. Monitors content height within each page
+ * 1. Monitors content height within each page using scrollHeight
  * 2. When content overflows, moves excess to next page (creates if needed)
- * 3. Code blocks are handled by CSS (max-height + scrollbar) - NOT by this plugin
+ * 3. Handles paste events and rapid content additions efficiently
  */
 
 export interface PageManagerOptions {
@@ -39,7 +39,7 @@ export const PageManager = Extension.create<PageManagerOptions>({
                     let timeout: ReturnType<typeof setTimeout> | null = null;
                     let isProcessing = false;
                     let operationCount = 0;
-                    const MAX_OPERATIONS = 30;
+                    const MAX_OPERATIONS = 50; // Increased for paste operations
 
                     const checkOverflow = () => {
                         if (isProcessing || operationCount >= MAX_OPERATIONS) return;
@@ -62,28 +62,36 @@ export const PageManager = Extension.create<PageManagerOptions>({
                                 const pageDiv = pageContentDivs[pageIndex] as HTMLElement;
                                 const blocks = pageDiv.children;
 
-                                let accumulatedHeight = 0;
-                                let overflowBlockIndex = -1;
-
+                                // Calculate total height of all children to detect overflow
+                                // (we can't use scrollHeight anymore since parent has overflow:hidden)
+                                let totalChildrenHeight = 0;
                                 for (let i = 0; i < blocks.length; i++) {
                                     const block = blocks[i] as HTMLElement;
-
-                                    // For code blocks, use their CSS max-height (they scroll internally)
-                                    // Don't count them as overflow - they handle their own scrolling
-                                    if (block.tagName === 'PRE') {
-                                        // Code blocks have CSS max-height, use offsetHeight (capped by max-height)
-                                        accumulatedHeight += block.offsetHeight;
-                                    } else {
-                                        const blockHeight = block.offsetHeight;
-                                        if (accumulatedHeight + blockHeight > contentHeight + 5) {
-                                            overflowBlockIndex = i;
-                                            break;
-                                        }
-                                        accumulatedHeight += blockHeight;
-                                    }
+                                    totalChildrenHeight += block.offsetHeight;
                                 }
 
-                                if (overflowBlockIndex < 0) continue;
+                                // If total children height exceeds content height, we have overflow
+                                if (totalChildrenHeight <= contentHeight + 5) {
+                                    continue; // No overflow, check next page
+                                }
+
+                                let accumulatedHeight = 0;
+                                let firstOverflowIndex = -1;
+
+                                // Find which block causes the overflow
+                                for (let i = 0; i < blocks.length; i++) {
+                                    const block = blocks[i] as HTMLElement;
+                                    const blockHeight = block.offsetHeight;
+
+                                    // Check if adding this block would exceed the limit
+                                    if (accumulatedHeight + blockHeight > contentHeight + 5) {
+                                        firstOverflowIndex = i;
+                                        break;
+                                    }
+                                    accumulatedHeight += blockHeight;
+                                }
+
+                                if (firstOverflowIndex < 0) continue;
 
                                 // Find the page node in document
                                 let targetPageNode: any = null;
@@ -100,66 +108,112 @@ export const PageManager = Extension.create<PageManagerOptions>({
                                     }
                                 });
 
-                                if (!targetPageNode || overflowBlockIndex <= 0) continue;
-
-                                // Calculate document position of the overflowing block
-                                let blockPos = targetPagePos + 1;
-                                for (let i = 0; i < overflowBlockIndex; i++) {
-                                    blockPos += targetPageNode.child(i).nodeSize;
+                                if (!targetPageNode || firstOverflowIndex <= 0 || firstOverflowIndex >= targetPageNode.childCount) {
+                                    continue;
                                 }
 
-                                // Collect content to move to next page
+                                // Collect ALL content from firstOverflowIndex to end
                                 const contentToMove: any[] = [];
-                                for (let i = overflowBlockIndex; i < targetPageNode.childCount; i++) {
+                                for (let i = firstOverflowIndex; i < targetPageNode.childCount; i++) {
                                     contentToMove.push(targetPageNode.child(i));
                                 }
 
                                 if (contentToMove.length > 0) {
                                     const tr = state.tr;
 
-                                    // Create new page with moved content
-                                    const newPage = schema.nodes.page.create(null, contentToMove);
+                                    // Calculate positions
+                                    let blockPos = targetPagePos + 1; // Start after page opening
+                                    for (let i = 0; i < firstOverflowIndex; i++) {
+                                        blockPos += targetPageNode.child(i).nodeSize;
+                                    }
 
-                                    // Delete moved content from current page
                                     const deleteFrom = blockPos;
                                     const deleteTo = targetPagePos + targetPageNode.nodeSize - 1;
-                                    tr.delete(deleteFrom, deleteTo);
 
-                                    // Insert new page
-                                    const insertPos = targetPagePos + targetPageNode.nodeSize - (deleteTo - deleteFrom);
-                                    tr.insert(insertPos, newPage);
+                                    // Check if next page exists
+                                    const nextPageIndex = pageIndex + 1;
+                                    let nextPageExists = false;
+                                    let nextPagePos = 0;
+                                    let nextPageNode: any = null;
+                                    let currentIdx = 0;
+
+                                    doc.forEach((node, offset) => {
+                                        if (node.type.name === 'page') {
+                                            if (currentIdx === nextPageIndex) {
+                                                nextPageExists = true;
+                                                nextPagePos = offset;
+                                                nextPageNode = node;
+                                            }
+                                            currentIdx++;
+                                        }
+                                    });
+
+                                    if (nextPageExists && nextPageNode) {
+                                        // Prepend to existing next page
+                                        const insertPos = nextPagePos + 1; // After page opening tag
+
+                                        // Delete from current page first
+                                        tr.delete(deleteFrom, deleteTo);
+
+                                        // Insert at beginning of next page (adjust position after deletion)
+                                        const adjustedInsertPos = insertPos - (deleteTo - deleteFrom);
+                                        contentToMove.forEach((node, idx) => {
+                                            tr.insert(adjustedInsertPos + idx, node);
+                                        });
+                                    } else {
+                                        // Create new page with moved content
+                                        const newPage = schema.nodes.page.create(null, contentToMove);
+
+                                        // Delete moved content from current page
+                                        tr.delete(deleteFrom, deleteTo);
+
+                                        // Insert new page after current page
+                                        const insertPos = targetPagePos + targetPageNode.nodeSize - (deleteTo - deleteFrom);
+                                        tr.insert(insertPos, newPage);
+                                    }
 
                                     editorView.dispatch(tr);
                                     actionTaken = true;
                                 }
                             }
 
-                            // If we took action, schedule another check
+                            // If we took action, schedule another check quickly
                             if (actionTaken) {
-                                scheduleCheck(100);
+                                scheduleCheck(50); // Faster recheck
                             } else {
-                                operationCount = 0;
+                                operationCount = 0; // Reset counter when no action needed
                             }
                         } catch (e) {
                             console.error('PageManager error:', e);
+                            operationCount = 0; // Reset on error
                         } finally {
                             isProcessing = false;
                         }
                     };
 
-                    const scheduleCheck = (delay = 150) => {
+                    const scheduleCheck = (delay = 100) => {
                         if (timeout) clearTimeout(timeout);
                         timeout = setTimeout(checkOverflow, delay);
                     };
 
                     // Initial check
-                    setTimeout(() => scheduleCheck(500), 500);
+                    setTimeout(() => scheduleCheck(300), 300);
 
                     return {
                         update(view, prevState) {
-                            if (!view.state.doc.eq(prevState.doc)) {
-                                operationCount = 0;
-                                scheduleCheck(100);
+                            const docChanged = !view.state.doc.eq(prevState.doc);
+
+                            if (docChanged) {
+                                operationCount = 0; // Reset counter on doc change
+
+                                // Check immediately for paste events (large changes)
+                                const sizeDiff = Math.abs(view.state.doc.nodeSize - prevState.doc.nodeSize);
+                                if (sizeDiff > 100) {
+                                    // Likely a paste or large insertion
+                                    scheduleCheck(10); // Very fast check
+                                } else {
+                                    scheduleCheck(50); // Normal typing speed
+                                }
                             }
                         },
                         destroy() {
