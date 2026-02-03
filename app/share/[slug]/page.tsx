@@ -12,9 +12,12 @@ export default async function SharePage({ params }: Props) {
 
   try {
     // Fetch from backend API
-    const res = await fetch(`${process.env.NODE_BACKEND_URL}/api/share/${resolvedParams.slug}`, {
-      cache: 'no-store'
-    });
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/share/${resolvedParams.slug}`,
+      {
+        cache: "no-store",
+      },
+    );
 
     if (res.ok) {
       const data = await res.json();
@@ -22,7 +25,11 @@ export default async function SharePage({ params }: Props) {
       initialRecord = {
         slug: data.slug,
         type: data.type || "json",
-        json: data.isPrivate ? "" : (typeof data.data === 'string' ? data.data : JSON.stringify(data.data)),
+        json: data.isPrivate
+          ? ""
+          : typeof data.data === "string"
+            ? data.data
+            : JSON.stringify(data.data),
         mode: data.mode || "visualize",
         isPrivate: data.isPrivate || false,
         accessType: data.accessType || "editor",
@@ -39,4 +46,3 @@ export default async function SharePage({ params }: Props) {
 
   return <Home initialRecord={initialRecord} />;
 }
-
