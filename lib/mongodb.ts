@@ -3,9 +3,9 @@ import { MongoClient, Db } from "mongodb";
 const uri: string = process.env.MONGODB_URI || "";
 const dbName: string = process.env.MONGODB_DB || "json_cracker";
 
-if (!uri) {
-  throw new Error("Please define the MONGODB_URI environment variable.");
-}
+// if (!uri) {
+//   throw new Error("Please define the MONGODB_URI environment variable.");
+// }
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
