@@ -12,6 +12,7 @@ jobs:
       PORT: 3000
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      NODE_BACKEND_URL: ${{ secrets.NODE_BACKEND_URL }}
 
     steps:
       - name: Checkout code
