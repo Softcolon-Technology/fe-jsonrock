@@ -1,0 +1,49 @@
+import { redirect } from "next/navigation";
+import EditorPage from "../../../editor-page";
+
+interface Props {
+  params: Promise<{ slug: string }>;
+}
+
+export default async function EditorTextSlugPage({ params }: Props) {
+  const resolvedParams = await params;
+
+  let initialRecord: any;
+
+  try {
+    // Fetch from backend API
+    const res = await fetch(
+      `${process.env.NODE_BACKEND_URL}/api/share/${resolvedParams.slug}`,
+      {
+        cache: "no-store",
+      },
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+
+      // Backend returns { data, type, slug, isPrivate, accessType, mode }
+      initialRecord = {
+        slug: data.slug,
+        type: data.type || "text",
+        json: data.isPrivate
+          ? ""
+          : typeof data.data === "string"
+            ? data.data
+            : JSON.stringify(data.data),
+        mode: data.mode || "visualize",
+        isPrivate: data.isPrivate || false,
+        accessType: data.accessType || "editor",
+        createdAt: new Date().toISOString(),
+      };
+    } else {
+      // Record doesn't exist - redirect to editor
+      redirect("/editor");
+    }
+  } catch (error) {
+    console.error("Error fetching share link:", error);
+    redirect("/editor");
+  }
+
+  return <EditorPage initialRecord={initialRecord} featureMode="text" />;
+}
