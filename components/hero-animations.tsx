@@ -18,7 +18,7 @@ const pathVariants: any = {
 
 export function LeftHeroAnimation() {
   return (
-    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[300px] h-[400px] hidden xl:block pointer-events-none z-0">
+    <div className="absolute -left-4/12 top-1/2 -translate-y-1/2 w-[300px] h-[400px] hidden xl:block pointer-events-none z-0">
       <svg
         width="100%"
         height="100%"
@@ -63,7 +63,14 @@ export function LeftHeroAnimation() {
         />
 
         <defs>
-          <linearGradient id="gradient-left" x1="0%" y1="0%" x2="100%" y2="0%">
+          <linearGradient
+            id="gradient-left"
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1="0"
+            x2="300"
+            y2="0"
+          >
             <stop offset="0%" stopColor="#00B3B7" stopOpacity="0.2" />
             <stop offset="100%" stopColor="#00B3B7" stopOpacity="0.8" />
           </linearGradient>
@@ -144,7 +151,7 @@ export function LeftHeroAnimation() {
 
 export function RightHeroAnimation() {
   return (
-    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[300px] h-[400px] hidden xl:block pointer-events-none z-0">
+    <div className="absolute -right-4/12 top-1/2 -translate-y-1/2 w-[300px] h-[400px] hidden xl:block pointer-events-none z-0">
       <svg
         width="100%"
         height="100%"
@@ -188,7 +195,14 @@ export function RightHeroAnimation() {
         />
 
         <defs>
-          <linearGradient id="gradient-right" x1="0%" y1="0%" x2="100%" y2="0%">
+          <linearGradient
+            id="gradient-right"
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1="0"
+            x2="300"
+            y2="0"
+          >
             <stop offset="0%" stopColor="#00B3B7" stopOpacity="0.8" />
             <stop offset="100%" stopColor="#00B3B7" stopOpacity="0.2" />
           </linearGradient>

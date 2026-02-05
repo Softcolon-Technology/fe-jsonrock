@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import { motion } from "framer-motion";
 import Image from "next/image";
-import { ArrowRight } from "lucide-react";
 import { LeftHeroAnimation, RightHeroAnimation } from "./hero-animations";
 
 export default function HeroSection() {
@@ -20,9 +19,6 @@ export default function HeroSection() {
           }}
         />
       </div>
-
-      <LeftHeroAnimation />
-      <RightHeroAnimation />
 
       {/* Hero Content */}
       <div className="container mx-auto px-4 lg:px-8 relative z-10 pt-12 pb-16 pt-32 md:pb-32">
@@ -48,6 +44,8 @@ export default function HeroSection() {
 
           {/* Hero Image */}
           <div className="relative max-w-4xl mx-auto mt-16">
+            <LeftHeroAnimation />
+            <RightHeroAnimation />
             <div className="blur-[97px] z-[-10] bg-[#00B3B7] w-[80%] md:w-[85%] aspect-[2.77/1] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
             <Image
               src="/hero-gif.gif"

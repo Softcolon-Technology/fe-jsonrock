@@ -10,24 +10,18 @@ import Footer from "@/components/footer";
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
       <Navbar />
 
       <div className="bg-[#fafafa]">
-        {/* Hero Section */}
         <HeroSection />
 
-        {/* Features Section */}
         <FeaturesSection />
       </div>
 
-      {/* Showcase Section */}
       <ShowcaseSection />
 
-      {/* Productivity Section */}
       <ProductivitySection />
 
-      {/* Footer */}
       <Footer />
     </div>
   );
