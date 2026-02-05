@@ -13,7 +13,7 @@ export default async function EditorTextSlugPage({ params }: Props) {
   try {
     // Fetch from backend API
     const res = await fetch(
-      `${process.env.NODE_BACKEND_URL}/api/share/${resolvedParams.slug}`,
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/share/${resolvedParams.slug}`,
       {
         cache: "no-store",
       },
