@@ -1,33 +1,33 @@
-name: Next.js CI/CD for Development Branch [Jsonrock Softcolon]
+# name: Next.js CI/CD for Development Branch [Jsonrock Softcolon]
 
-on:
-  push:
-    branches: ['development']
+# on:
+#   push:
+#     branches: ['development']
 
-jobs:
-  build:
-    runs-on: jsonrock dev
-    environment: development
-    env:
-      PORT: 3003
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
-      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
-      NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
+# jobs:
+#   build:
+#     runs-on: jsonrock dev
+#     environment: development
+#     env:
+#       PORT: 3003
+#       MONGODB_URI: ${{ secrets.MONGODB_URI }}
+#       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+#       NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
+#       - name: Set up Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 24
 
-      - name: Install Dependencies
-        run: npm install
+#       - name: Install Dependencies
+#         run: npm install
 
-      - name: Build Application
-        run: npm run build
+#       - name: Build Application
+#         run: npm run build
 
-      - name: Restart Application with PM2
-        run: pm2 restart ecosystem.config.js --only jsonrock-dev --update-env
+#       - name: Restart Application with PM2
+#         run: pm2 restart ecosystem.config.js --only jsonrock-dev --update-env
