@@ -66,15 +66,7 @@ export default function Navbar() {
             alt="JSONROCK"
             width={120}
             height={24}
-            className="h-6 w-auto block dark:hidden"
-            priority
-          />
-          <Image
-            src="/jsonrock-light.svg"
-            alt="JSONROCK"
-            width={120}
-            height={24}
-            className="h-6 w-auto hidden dark:block"
+            className="h-6 w-auto"
             priority
           />
         </div>
