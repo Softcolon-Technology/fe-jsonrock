@@ -15,6 +15,7 @@ export default async function RedirectToTextChat({ params }: Props) {
         cache: "no-store",
       },
     );
+    console.log({ checkRes });
 
     if (!checkRes.ok) {
       // Slug doesn't exist, create it via API
@@ -39,7 +40,7 @@ export default async function RedirectToTextChat({ params }: Props) {
 
       if (!createRes.ok) {
         console.error("Failed to create slug:", await createRes.text());
-        // Still redirect even if creation failed - the /share/text/[slug] page will handle it
+        // Still redirect even if creation failed - the /editor/text/[slug] page will handle it
       }
     }
   } catch (error) {
@@ -48,5 +49,5 @@ export default async function RedirectToTextChat({ params }: Props) {
   }
 
   // Redirect to the text editor page
-  redirect(`/share/text/${slug}`);
+  redirect(`/editor/text/${slug}`);
 }
