@@ -15,7 +15,6 @@ export default async function RedirectToTextChat({ params }: Props) {
         cache: "no-store",
       },
     );
-    console.log({ checkRes });
 
     if (!checkRes.ok) {
       // Slug doesn't exist, create it via API

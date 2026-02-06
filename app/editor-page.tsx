@@ -6,23 +6,14 @@ import { Edge, Node } from "reactflow";
 import {
   Code2,
   GitGraph,
-  Share2,
-  Menu,
   LayoutTemplate,
-  Settings,
-  Download,
   Copy,
   Check,
-  FolderPlus,
-  Save,
   Lock,
-  Unlock,
-  Link as LinkIcon,
   ArrowRight,
   AlertCircle,
   UploadCloud,
   X,
-  MessageSquarePlus,
   Loader2,
   Eye,
   EyeOff,
@@ -30,13 +21,10 @@ import {
 
 import { getJsonParseError } from "@/lib/json-error";
 
-import type { ShareLinkRecord, ShareAccessType } from "@/lib/shareLinks";
 import { getSocket } from "@/lib/socket";
 
 import { ModalAlert } from "./components/ui/ModalAlert";
-import { SharePopover, AccessType } from "./components/SharePopover";
-import { useTheme } from "next-themes";
-import { Moon, Sun } from "lucide-react";
+import { SharePopover } from "./components/SharePopover";
 import Cookies from "js-cookie";
 
 import JsonEditor from "./components/JsonEditor";
@@ -46,40 +34,40 @@ import { getLayoutedElements } from "@/lib/graph-layout";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/useDebounce";
 import dynamic from "next/dynamic";
+import EditorHeader from "./components/editor/editor-header";
+import { ShareType } from "./iterface";
 
 const RichTextEditor = dynamic(() => import("./components/RichTextEditor"), {
   ssr: false,
 });
 
+export type JsonShareMode = "visualize" | "tree" | "formatter";
+
+export type ShareAccessType = "editor" | "viewer";
+
+export interface ShareLinkRecord {
+  _id?: string;
+  slug: string;
+  type: ShareType;
+  json: string; // Content (json or text)
+  mode: JsonShareMode;
+  isPrivate: boolean;
+  accessType?: ShareAccessType; // Defaults to 'viewer' if undefined for old records
+  passwordHash?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 type SerializedShareLinkRecord = Omit<ShareLinkRecord, "createdAt" | "_id"> & {
   createdAt: string;
   _id?: string;
   accessType?: ShareAccessType;
-  type?: "json" | "text";
+  type?: ShareType;
 };
-
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-  if (!mounted) return null; // Avoid hydration mismatch
-
-  return (
-    <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors flex items-center justify-center"
-      title="Toggle Theme"
-    >
-      {theme === "dark" ? <Moon size={20} /> : <Sun size={20} />}
-    </button>
-  );
-}
 
 interface HomeProps {
   initialRecord?: SerializedShareLinkRecord;
-  featureMode?: "json" | "text";
+  featureMode?: ShareType;
 }
 
 export default function Home({
@@ -90,7 +78,7 @@ export default function Home({
   const params = useParams();
   const urlSlug = params?.slug as string | undefined;
 
-  const [jsonInput, setJsonInput] = useState<string>(
+  const [currentJsonContent, setCurrentJsonContent] = useState<string>(
     initialRecord
       ? initialRecord.json
       : featureMode === "text"
@@ -98,54 +86,57 @@ export default function Home({
         : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}',
   );
 
-  const lastSavedContent = React.useRef<string>(
-    initialRecord?.json || jsonInput,
+  const lastPersistedContentRef = React.useRef<string>(
+    initialRecord?.json || currentJsonContent,
   );
 
-  const [parsedJson, setParsedJson] = useState<any>(null);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
-  const [activeTab, setActiveTab] = useState<
+  const [parsedJsonData, setParsedJsonData] = useState<any>(null);
+  const [graphNodes, setGraphNodes] = useState<Node[]>([]);
+  const [graphEdges, setGraphEdges] = useState<Edge[]>([]);
+  const [currentViewMode, setCurrentViewMode] = useState<
     "visualize" | "tree" | "formatter"
   >(initialRecord?.mode || "visualize");
 
-  const [type, setType] = useState<"json" | "text">(
+  const [documentType, setDocumentType] = useState<ShareType>(
     initialRecord?.type || featureMode,
   );
-  // Remove unused setFontSize if not used, or keep if future proofing
-  const [fontSize, setFontSize] = useState(14);
 
-  const [isValid, setIsValid] = useState(true);
-  const [layouting, setLayouting] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<{
+  const [isJsonValid, setIsJsonValid] = useState<boolean>(true);
+  const [isLayoutCalculating, setIsLayoutCalculating] =
+    useState<boolean>(false);
+  const [isClipboardCopied, setIsClipboardCopied] = useState<boolean>(false);
+  const [jsonValidationError, setJsonValidationError] = useState<{
     message: string;
     line?: number;
   } | null>(null);
 
   // Split state:
-  // 1. jsonInput = Source of Truth for Saving/Graph (Updated by local typing)
-  // 2. remoteCode = Source of Truth for Editor Display (Updated ONLY by Socket/System)
-  const [remoteCode, setRemoteCode] = useState<{
+  // 1. currentJsonContent = Source of Truth for Saving/Graph (Updated by local typing)
+  // 2. syncedRemoteContent = Source of Truth for Editor Display (Updated ONLY by Socket/System)
+  const [syncedRemoteContent, setSyncedRemoteContent] = useState<{
     code: string;
     nonce: number;
   } | null>(null);
 
-  const [tabSize, setTabSize] = useState<string>("2");
+  const [indentationSize, setIndentationSize] = useState<string>("2");
 
   // Loading State
-  const [isLoading, setIsLoading] = useState(
+  const [isPageLoading, setIsPageLoading] = useState(
     !!urlSlug && initialRecord?.slug !== urlSlug,
   );
 
   // Share State
-  const [slug, setSlug] = useState<string | null>(initialRecord?.slug || null);
-  const [isPrivate, setIsPrivate] = useState(initialRecord?.isPrivate || false);
-  const [accessType, setAccessType] = useState<ShareAccessType>(
+  const [documentSlug, setDocumentSlug] = useState<string | null>(
+    initialRecord?.slug || null,
+  );
+  const [isDocumentPrivate, setIsDocumentPrivate] = useState(
+    initialRecord?.isPrivate || false,
+  );
+  const [userAccessLevel, setUserAccessLevel] = useState<ShareAccessType>(
     initialRecord?.accessType || "viewer",
   );
 
-  const [isOwner, setIsOwner] = useState(false);
+  const [isCurrentUserOwner, setIsCurrentUserOwner] = useState(false);
 
   // Helper to determine ownership (moved before canEdit initialization)
   const checkOwnership = useCallback((targetSlug: string) => {
@@ -163,8 +154,8 @@ export default function Home({
     return false;
   }, []);
 
-  // Initialize canEdit based on initialRecord to prevent race condition
-  const [canEdit, setCanEdit] = useState(() => {
+  // Initialize hasEditPermission based on initialRecord to prevent race condition
+  const [hasEditPermission, setHasEditPermission] = useState(() => {
     if (!initialRecord?.slug) return true; // New document - always editable
     const isOwned = checkOwnership(initialRecord.slug);
     if (isOwned) return true; // Owner always can edit
@@ -186,40 +177,40 @@ export default function Home({
         content = data.data || data.json || "";
       }
 
-      setJsonInput(content);
-      setSlug(data.slug || null);
-      setIsPrivate(data.isPrivate || false);
-      setAccessType(data.accessType || "viewer");
-      setType(data.type || "json");
-      setActiveTab(data.mode || "visualize");
-      setRemoteCode({ code: content, nonce: Date.now() });
+      setCurrentJsonContent(content);
+      setDocumentSlug(data.slug || null);
+      setIsDocumentPrivate(data.isPrivate || false);
+      setUserAccessLevel(data.accessType || "viewer");
+      setDocumentType(data.type || "json");
+      setCurrentViewMode(data.mode || "visualize");
+      setSyncedRemoteContent({ code: content, nonce: Date.now() });
 
       // Handle Locking
       if (data.isPrivate) {
-        setIsPersistedPrivate(true);
+        setIsPrivacyLocked(true);
         // If content is missing/masked, it is locked.
         const isLockedState = data.data === null || data.data === undefined;
-        setIsLocked(isLockedState);
+        setIsPasswordLocked(isLockedState);
       } else {
-        setIsLocked(false);
-        setIsPersistedPrivate(false);
+        setIsPasswordLocked(false);
+        setIsPrivacyLocked(false);
       }
 
       // CRITICAL: Update lastSavedContent to current loaded content
-      lastSavedContent.current = content;
+      lastPersistedContentRef.current = content;
 
       if (data.slug) {
         const isOwned = checkOwnership(data.slug);
         if (isOwned) {
-          setIsOwner(true);
-          setCanEdit(true);
+          setIsCurrentUserOwner(true);
+          setHasEditPermission(true);
         } else {
-          setCanEdit(data.accessType === "editor");
-          setIsOwner(false);
+          setHasEditPermission(data.accessType === "editor");
+          setIsCurrentUserOwner(false);
         }
       } else {
-        setIsOwner(true);
-        setCanEdit(true);
+        setIsCurrentUserOwner(true);
+        setHasEditPermission(true);
       }
     },
     [checkOwnership],
@@ -229,7 +220,7 @@ export default function Home({
   useEffect(() => {
     if (urlSlug) {
       // ALWAYS Fetch from API on navigation/load
-      setIsLoading(true);
+      setIsPageLoading(true);
       const controller = new AbortController();
 
       fetch(`/api/share/${urlSlug}`, { signal: controller.signal })
@@ -249,7 +240,7 @@ export default function Home({
         })
         .finally(() => {
           if (!controller.signal.aborted) {
-            setIsLoading(false);
+            setIsPageLoading(false);
           }
         });
 
@@ -261,20 +252,20 @@ export default function Home({
           ? '<p style="font-size: 14pt">Type your text here...</p>'
           : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
 
-      if (slug !== null) {
-        setJsonInput(defaultContent);
-        setSlug(null);
-        setIsPrivate(false);
-        setAccessType("viewer");
-        setType(featureMode);
-        setActiveTab("visualize");
-        setIsOwner(true);
-        setCanEdit(true);
-        setParsedJson(null);
-        setRemoteCode({ code: defaultContent, nonce: Date.now() });
-        lastSavedContent.current = defaultContent;
+      if (documentSlug !== null) {
+        setCurrentJsonContent(defaultContent);
+        setDocumentSlug(null);
+        setIsDocumentPrivate(false);
+        setUserAccessLevel("viewer");
+        setDocumentType(featureMode);
+        setCurrentViewMode("visualize");
+        setIsCurrentUserOwner(true);
+        setHasEditPermission(true);
+        setParsedJsonData(null);
+        setSyncedRemoteContent({ code: defaultContent, nonce: Date.now() });
+        lastPersistedContentRef.current = defaultContent;
       }
-      setIsLoading(false);
+      setIsPageLoading(false);
     }
   }, [urlSlug, featureMode, syncFromData]);
 
@@ -290,45 +281,47 @@ export default function Home({
       slugs.push(newSlug);
       Cookies.set("json-cracker-owned", JSON.stringify(slugs), { expires: 30 }); // 30 days
     }
-    setIsOwner(true);
+    setIsCurrentUserOwner(true);
   };
 
-  const [password, setPassword] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
+  const [documentPassword, setDocumentPassword] = useState("");
+  const [isAutoSaving, setIsAutoSaving] = useState<boolean>(false);
   // Track if the record is indefinitely private (persisted as private)
-  const [isPersistedPrivate, setIsPersistedPrivate] = useState(
+  const [isPrivacyLocked, setIsPrivacyLocked] = useState(
     initialRecord?.isPrivate || false,
   );
 
-  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   // Locked State for Private Links
-  const [isLocked, setIsLocked] = useState(
+  const [isPasswordLocked, setIsPasswordLocked] = useState(
     (initialRecord?.isPrivate && !initialRecord?.json) || false,
   );
-  const [unlockLoading, setUnlockLoading] = useState(false);
-  const [unlockError, setUnlockError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
+  const [isUnlocking, setIsUnlocking] = useState(false);
+  const [unlockErrorMessage, setUnlockErrorMessage] = useState<string | null>(
+    null,
+  );
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   // Refs for stable callback access
-  const slugRef = React.useRef(slug);
-  const isLockedRef = React.useRef(isLocked);
-  const isPrivateRef = React.useRef(isPrivate);
-  const isValidRef = React.useRef(isValid);
+  const slugRef = React.useRef(documentSlug);
+  const isLockedRef = React.useRef(isPasswordLocked);
+  const isPrivateRef = React.useRef(isDocumentPrivate);
+  const isValidRef = React.useRef(isJsonValid);
 
   useEffect(() => {
-    slugRef.current = slug;
-    isLockedRef.current = isLocked;
-    isPrivateRef.current = isPrivate;
-    isValidRef.current = isValid;
-  }, [slug, isLocked, isPrivate, isValid]);
+    slugRef.current = documentSlug;
+    isLockedRef.current = isPasswordLocked;
+    isPrivateRef.current = isDocumentPrivate;
+    isValidRef.current = isJsonValid;
+  }, [documentSlug, isPasswordLocked, isDocumentPrivate, isJsonValid]);
 
   const emitTimeout = React.useRef<NodeJS.Timeout | null>(null);
 
   // Stable Change Handler
-  const handleJsonChange = useCallback((newCode: string | undefined) => {
+  const onJsonContentChange = useCallback((newCode: string | undefined) => {
     const code = newCode || "";
-    setJsonInput(code);
+    setCurrentJsonContent(code);
 
     // Debounce socket emission to prevent flooding/lag
     if (emitTimeout.current) clearTimeout(emitTimeout.current);
@@ -346,23 +339,23 @@ export default function Home({
 
   // Socket Effect - OPTIMIZED for Production
   useEffect(() => {
-    if (!slug) return;
+    if (!documentSlug) return;
 
     // Skip socket connection for locked private content (no collaboration possible)
-    if (isPrivate && isLocked) return;
+    if (isDocumentPrivate && isPasswordLocked) return;
 
     const socket = getSocket();
 
     const onConnect = () => {
-      socket.emit("join-room", slug);
+      socket.emit("join-room", documentSlug);
     };
 
     const onCodeChange = (newCode: string) => {
       // If we receive an update, we treat it as the source of truth
-      setJsonInput(newCode);
-      setRemoteCode({ code: newCode, nonce: Date.now() });
+      setCurrentJsonContent(newCode);
+      setSyncedRemoteContent({ code: newCode, nonce: Date.now() });
       // CRITICAL: Mark as saved to prevent duplicate auto-save from this browser
-      lastSavedContent.current = newCode;
+      lastPersistedContentRef.current = newCode;
     };
 
     // CRITICAL FIX: Only connect if not already connected
@@ -388,12 +381,12 @@ export default function Home({
       socket.off("connect", onConnect);
       socket.off("code-change", onCodeChange);
       // Leave the room but stay connected for potential reuse
-      socket.emit("leave-room", slug);
+      socket.emit("leave-room", documentSlug);
     };
-  }, [slug, isLocked]); // CRITICAL: Include isLocked so socket connects after unlock
+  }, [documentSlug, isPasswordLocked]); // CRITICAL: Include isLocked so socket connects after unlock
 
   // Alert State
-  const [alertConfig, setAlertConfig] = useState<{
+  const [alertState, setAlertState] = useState<{
     isOpen: boolean;
     title: string;
     message: string;
@@ -405,31 +398,31 @@ export default function Home({
     type: "info",
   });
 
-  const showAlert = (
+  const triggerAlert = (
     title: string,
     message: string,
     type: "success" | "error" | "info" | "warning" = "info",
   ) => {
-    setAlertConfig({ isOpen: true, title, message, type });
+    setAlertState({ isOpen: true, title, message, type });
   };
 
-  const closeAlert = () => {
-    setAlertConfig((prev) => ({ ...prev, isOpen: false }));
+  const dismissAlert = () => {
+    setAlertState((prev) => ({ ...prev, isOpen: false }));
   };
 
-  const handleUnlock = async () => {
+  const handleUnlockDocument = async () => {
     if (!initialRecord?.slug) return;
-    setUnlockLoading(true);
-    setUnlockError(null);
+    setIsUnlocking(true);
+    setUnlockErrorMessage(null);
     try {
       const res = await fetch(`/api/share/${initialRecord.slug}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: documentPassword }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setUnlockError(data.error || "Failed to unlock");
+        setUnlockErrorMessage(data.error || "Failed to unlock");
         return;
       }
 
@@ -442,65 +435,66 @@ export default function Home({
         try {
           const parsed = JSON.parse(ownedSlugs);
           if (Array.isArray(parsed) && parsed.includes(initialRecord.slug)) {
-            setIsOwner(true);
-            setCanEdit(true);
+            setIsCurrentUserOwner(true);
+            setHasEditPermission(true);
           }
         } catch (e) {}
       }
 
-      setIsPersistedPrivate(data.isPrivate);
-      setIsLocked(false);
+      setIsPrivacyLocked(data.isPrivate);
+      setIsPasswordLocked(false);
     } catch (err) {
-      setUnlockError((err as Error).message);
+      setUnlockErrorMessage((err as Error).message);
     } finally {
-      setUnlockLoading(false);
+      setIsUnlocking(false);
     }
   };
 
-  const handleCancelUnlock = () => {
+  const cancelUnlockAttempt = () => {
     router.push("/editor");
   };
 
   // New Button Handler
-  const handleNew = async (specificType?: "json" | "text") => {
-    const targetType = typeof specificType === "string" ? specificType : type;
+  const handleCreateNewDocument = async (specificType?: ShareType) => {
+    const targetType =
+      typeof specificType === "string" ? specificType : documentType;
     const isText = targetType === "text";
     const initialContent = isText
       ? '<p style="font-size: 14pt">Type your text here...</p>'
       : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
 
-    setJsonInput(initialContent);
-    setSlug(null);
-    setIsPrivate(false);
-    setIsPersistedPrivate(false);
-    setAccessType("viewer"); // Default for new link settings
-    setCanEdit(true); // New file is always editable
-    setPassword("");
-    setRemoteCode({
+    setCurrentJsonContent(initialContent);
+    setDocumentSlug(null);
+    setIsDocumentPrivate(false);
+    setIsPrivacyLocked(false);
+    setUserAccessLevel("viewer"); // Default for new link settings
+    setHasEditPermission(true); // New file is always editable
+    setDocumentPassword("");
+    setSyncedRemoteContent({
       code: initialContent,
       nonce: Date.now(),
     });
 
     // Create initial record
-    setIsSaving(true);
+    setIsAutoSaving(true);
     try {
       const res = await fetch("/api/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           json: initialContent,
-          mode: activeTab,
+          mode: currentViewMode,
           type: targetType,
           accessType: "editor",
         }),
       });
       const data = await res.json();
       if (data.slug) {
-        setSlug(data.slug);
-        setAccessType(data.accessType || "editor");
-        setCanEdit(true); // Implicitly editor of new file
-        setIsOwner(true);
-        setType(data.type || targetType);
+        setDocumentSlug(data.slug);
+        setUserAccessLevel(data.accessType || "editor");
+        setHasEditPermission(true); // Implicitly editor of new file
+        setIsCurrentUserOwner(true);
+        setDocumentType(data.type || targetType);
         addOwnership(data.slug);
         const route =
           (data.type || targetType) === "text" ? "/editor/text/" : "/editor/";
@@ -509,17 +503,17 @@ export default function Home({
     } catch (e) {
       console.error("Failed to create new record", e);
     } finally {
-      setIsSaving(false);
+      setIsAutoSaving(false);
     }
   };
 
   // Save Button Handler
-  const handleSave = async (silent = false) => {
-    if (!slug) return;
+  const handleSaveDocument = async (silent = false) => {
+    if (!documentSlug) return;
 
-    if (isPrivate && password.length < 4) {
+    if (isDocumentPrivate && documentPassword.length < 4) {
       if (!silent)
-        showAlert(
+        triggerAlert(
           "Invalid Password",
           "Password must be at least 4 characters for private links.",
           "error",
@@ -527,30 +521,30 @@ export default function Home({
       return;
     }
 
-    setIsSaving(true);
+    setIsAutoSaving(true);
     try {
-      const res = await fetch(`/api/share/${slug}`, {
+      const res = await fetch(`/api/share/${documentSlug}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          json: jsonInput,
-          mode: activeTab,
-          isPrivate,
-          accessType, // Preserve current access settings
-          password: isPrivate ? password : undefined,
-          type,
+          json: currentJsonContent,
+          mode: currentViewMode,
+          isPrivate: isDocumentPrivate,
+          accessType: userAccessLevel, // Preserve current access settings
+          password: isDocumentPrivate ? documentPassword : undefined,
+          type: documentType,
         }),
       });
 
       const data = await res.json();
       if (res.ok) {
         if (data.created) {
-          addOwnership(slug);
+          addOwnership(documentSlug);
         }
-        if (isPrivate) setIsPersistedPrivate(true);
-        lastSavedContent.current = jsonInput; // Update last saved reference
+        if (isDocumentPrivate) setIsPrivacyLocked(true);
+        lastPersistedContentRef.current = currentJsonContent; // Update last saved reference
         if (!silent)
-          showAlert(
+          triggerAlert(
             "Saved Successfully",
             "Your changes have been saved.",
             "success",
@@ -558,7 +552,7 @@ export default function Home({
       } else {
         const err = data;
         if (!silent)
-          showAlert(
+          triggerAlert(
             "Save Failed",
             err.error || "An error occurred while saving.",
             "error",
@@ -567,44 +561,45 @@ export default function Home({
     } catch (e) {
       console.error("Failed to save", e);
       if (!silent)
-        showAlert(
+        triggerAlert(
           "Save Failed",
           "Network error or server unreachable.",
           "error",
         );
     } finally {
-      setIsSaving(false);
+      setIsAutoSaving(false);
     }
   };
 
   // Resizable Pane Logic
-  const [leftWidth, setLeftWidth] = useState(40); // Default 40%
-  const [isDragging, setIsDragging] = useState(false);
+  const [editorPanelWidthPercentage, setEditorPanelWidthPercentage] =
+    useState(40); // Default 40%
+  const [isResizingPanel, setIsResizingPanel] = useState(false);
 
   const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
     mouseDownEvent.preventDefault();
-    setIsDragging(true);
+    setIsResizingPanel(true);
   }, []);
 
   const stopResizing = useCallback(() => {
-    setIsDragging(false);
+    setIsResizingPanel(false);
   }, []);
 
   const resize = useCallback(
     (mouseMoveEvent: MouseEvent) => {
-      if (isDragging) {
+      if (isResizingPanel) {
         const newWidth = (mouseMoveEvent.clientX / window.innerWidth) * 100;
         // Constraint between 20% and 80%
         if (newWidth > 20 && newWidth < 80) {
-          setLeftWidth(newWidth);
+          setEditorPanelWidthPercentage(newWidth);
         }
       }
     },
-    [isDragging],
+    [isResizingPanel],
   );
 
   useEffect(() => {
-    if (isDragging) {
+    if (isResizingPanel) {
       window.addEventListener("mousemove", resize);
       window.addEventListener("mouseup", stopResizing);
     } else {
@@ -615,25 +610,29 @@ export default function Home({
       window.removeEventListener("mousemove", resize);
       window.removeEventListener("mouseup", stopResizing);
     };
-  }, [isDragging, resize, stopResizing]);
+  }, [isResizingPanel, resize, stopResizing]);
 
   // Upload Logic
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isFileUploading, setIsFileUploading] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      showAlert("Upload Failed", "File size exceeds the 2MB limit.", "error");
+      triggerAlert(
+        "Upload Failed",
+        "File size exceeds the 2MB limit.",
+        "error",
+      );
       e.target.value = ""; // Reset input
-      setIsUploadOpen(false);
+      setIsUploadModalOpen(false);
       return;
     }
 
-    setIsUploading(true);
+    setIsFileUploading(true);
     const formData = new FormData();
     formData.append("file", file);
 
@@ -653,22 +652,22 @@ export default function Home({
       router.push(`/editor/${data.slug}`);
     } catch (error) {
       console.error(error);
-      showAlert("Upload Failed", (error as Error).message, "error");
-      setIsUploading(false);
+      triggerAlert("Upload Failed", (error as Error).message, "error");
+      setIsFileUploading(false);
     }
   };
 
-  const handleShare = async (settings: {
-    accessType: ShareAccessType;
-    isPrivate: boolean;
-    password?: string;
+  const handleShareDocument = async (settings: {
+    accessLevel: ShareAccessType;
+    isPrivateLink: boolean;
+    sharePassword?: string;
   }) => {
     // Validate
     if (
-      settings.isPrivate &&
-      (!settings.password || settings.password.length < 4)
+      settings.isPrivateLink &&
+      (!settings.sharePassword || settings.sharePassword.length < 4)
     ) {
-      showAlert(
+      triggerAlert(
         "Invalid Password",
         "Password must be at least 4 characters.",
         "error",
@@ -676,22 +675,22 @@ export default function Home({
       return;
     }
 
-    setIsSaving(true);
+    setIsAutoSaving(true);
     // If no slug, create new
-    const method = slug ? "PUT" : "POST";
-    const url = slug ? `/api/share/${slug}` : "/api/share";
+    const method = documentSlug ? "PUT" : "POST";
+    const url = documentSlug ? `/api/share/${documentSlug}` : "/api/share";
 
     try {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          json: jsonInput,
-          mode: activeTab,
-          isPrivate: settings.isPrivate,
-          accessType: settings.accessType,
-          password: settings.password,
-          type,
+          json: currentJsonContent,
+          mode: currentViewMode,
+          isPrivate: settings.isPrivateLink,
+          accessType: settings.accessLevel,
+          password: settings.sharePassword,
+          type: documentType,
         }),
       });
 
@@ -701,22 +700,22 @@ export default function Home({
       }
 
       // Success
-      const newSlug = data.slug || slug;
-      if (newSlug !== slug) {
-        setSlug(newSlug);
+      const newSlug = data.slug || documentSlug;
+      if (newSlug !== documentSlug) {
+        setDocumentSlug(newSlug);
         addOwnership(newSlug); // Mark as owner of new/updated slug
-        const route = type === "text" ? "/editor/text/" : "/editor/";
+        const route = documentType === "text" ? "/editor/text/" : "/editor/";
         router.push(`${route}${newSlug}`);
       }
 
       // Update local state
-      setAccessType(settings.accessType);
-      setIsPrivate(settings.isPrivate);
-      if (settings.isPrivate) setIsPersistedPrivate(true);
-      if (settings.password) setPassword(settings.password);
+      setUserAccessLevel(settings.accessLevel);
+      setIsDocumentPrivate(settings.isPrivateLink);
+      if (settings.isPrivateLink) setIsPrivacyLocked(true);
+      if (settings.sharePassword) setDocumentPassword(settings.sharePassword);
 
       // Copy Link
-      const route = type === "text" ? "/editor/text/" : "/editor/";
+      const route = documentType === "text" ? "/editor/text/" : "/editor/";
       const link = `${window.location.origin}${route}${newSlug}`;
       let message = "Settings saved and link copied to clipboard!";
       try {
@@ -726,93 +725,99 @@ export default function Home({
         message = "Settings saved. You can copy the link from the address bar.";
       }
 
-      setIsShareOpen(false);
-      showAlert("Link Copied", message, "success");
+      setIsShareModalOpen(false);
+      triggerAlert("Link Copied", message, "success");
     } catch (e) {
       console.error(e);
-      showAlert("Share Failed", (e as Error).message, "error");
+      triggerAlert("Share Failed", (e as Error).message, "error");
     } finally {
-      setIsSaving(false);
+      setIsAutoSaving(false);
     }
   };
 
   // Debounce the input for Layout calculations (500ms)
-  const debouncedJsonInput = useDebounce(jsonInput, 500);
+  const debouncedJsonContent = useDebounce(currentJsonContent, 500);
 
   // Layout Effect - Depends on debounced input
   useEffect(() => {
-    if (!debouncedJsonInput || !debouncedJsonInput.trim()) {
-      setParsedJson(null);
-      setIsValid(true);
-      setNodes([]);
-      setEdges([]);
-      setErrorMessage(null);
+    if (!debouncedJsonContent || !debouncedJsonContent.trim()) {
+      setParsedJsonData(null);
+      setIsJsonValid(true);
+      setGraphNodes([]);
+      setGraphEdges([]);
+      setJsonValidationError(null);
       return;
     }
 
     try {
-      if (type === "text") {
-        setIsValid(true);
-        setErrorMessage(null);
+      if (documentType === "text") {
+        setIsJsonValid(true);
+        setJsonValidationError(null);
         return;
       }
-      const parsed = JSON.parse(debouncedJsonInput);
-      setParsedJson(parsed);
-      setIsValid(true);
-      setErrorMessage(null);
+      const parsed = JSON.parse(debouncedJsonContent);
+      setParsedJsonData(parsed);
+      setIsJsonValid(true);
+      setJsonValidationError(null);
 
-      if (activeTab === "visualize") {
-        setLayouting(true);
+      if (currentViewMode === "visualize") {
+        setIsLayoutCalculating(true);
         getLayoutedElements(parsed).then(
           ({ nodes: layoutedNodes, edges: layoutedEdges }) => {
-            setNodes(layoutedNodes);
-            setEdges(layoutedEdges);
-            setLayouting(false);
+            setGraphNodes(layoutedNodes);
+            setGraphEdges(layoutedEdges);
+            setIsLayoutCalculating(false);
           },
         );
       }
     } catch (e) {
-      setIsValid(false);
+      setIsJsonValid(false);
       if (e instanceof SyntaxError) {
-        setErrorMessage(getJsonParseError(debouncedJsonInput, e));
+        setJsonValidationError(getJsonParseError(debouncedJsonContent, e));
       }
     }
-  }, [debouncedJsonInput, activeTab]);
+  }, [debouncedJsonContent, currentViewMode]);
 
   // Debounce for Auto-Save (2 seconds)
-  const debouncedSaveContent = useDebounce(jsonInput, 2000);
+  const debouncedContentForAutoSave = useDebounce(currentJsonContent, 2000);
 
   // Auto-Save Effect
   useEffect(() => {
     // Auto-save in Text or JSON Mode, if editable, and has slug
-    if ((type === "text" || type === "json") && slug && canEdit && !isLocked) {
+    if (
+      (documentType === "text" || documentType === "json") &&
+      documentSlug &&
+      hasEditPermission &&
+      !isPasswordLocked
+    ) {
       // Check if content actually changed from last save
-      if (debouncedSaveContent === lastSavedContent.current) return;
+      if (debouncedContentForAutoSave === lastPersistedContentRef.current)
+        return;
 
       // Prevent double calls or saving while already saving (though guard handles it)
-      handleSave(true);
+      handleSaveDocument(true);
     }
-  }, [debouncedSaveContent]);
+  }, [debouncedContentForAutoSave]);
 
   const handleCopy = () => {
     // Copy the formatted output, not the input, if we are in format tab
-    if (activeTab === "formatter" && formattedOutput) {
+    if (currentViewMode === "formatter" && formattedOutput) {
       navigator.clipboard.writeText(formattedOutput);
     } else {
-      navigator.clipboard.writeText(jsonInput);
+      navigator.clipboard.writeText(currentJsonContent);
     }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setIsClipboardCopied(true);
+    setTimeout(() => setIsClipboardCopied(false), 2000);
   };
 
   // Computed Formatted Output
   const formattedOutput = React.useMemo(() => {
-    if (!parsedJson) return "";
-    if (tabSize === "minify") {
-      return JSON.stringify(parsedJson);
+    if (!parsedJsonData) return "";
+    if (indentationSize === "minify") {
+      return JSON.stringify(parsedJsonData);
     }
-    return JSON.stringify(parsedJson, null, Number(tabSize));
-  }, [parsedJson, tabSize]);
+    return JSON.stringify(parsedJsonData, null, Number(indentationSize));
+  }, [parsedJsonData, indentationSize]);
 
   // Mobile specific view state
   const [mobileTab, setMobileTab] = useState<"editor" | "viewer">("editor");
@@ -821,11 +826,12 @@ export default function Home({
     <div
       className={cn(
         "flex h-[100dvh] w-screen bg-gray-50 text-zinc-800 font-sans overflow-hidden",
-        type !== "text" && "dark:bg-zinc-950 dark:text-zinc-300 relative",
+        documentType !== "text" &&
+          "dark:bg-zinc-950 dark:text-zinc-300 relative",
       )}
     >
       {/* Global Loading Overlay */}
-      {isLoading && !isLocked && (
+      {isPageLoading && !isPasswordLocked && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center pointer-events-none">
           <Loader2 className="w-10 h-10 animate-spin text-emerald-600" />
         </div>
@@ -834,158 +840,30 @@ export default function Home({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
-        <header
-          className={cn(
-            "h-14 border-b border-zinc-200 flex items-center justify-between px-2 lg:px-6 bg-white shrink-0",
-            type !== "text" && "dark:border-zinc-900 dark:bg-zinc-950",
-          )}
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <a
-              href={
-                slug
-                  ? type === "text"
-                    ? `/editor/text/${slug}`
-                    : `/editor/${slug}`
-                  : "/editor"
-              }
-              className="flex items-center hover:opacity-80 transition-opacity"
-              title="Refresh Page"
-            >
-              <img
-                src="/jsonrock-dark.svg"
-                alt="JSONROCK"
-                className={cn(
-                  "h-5 sm:h-6 w-auto",
-                  type !== "text" ? "block dark:hidden" : "block",
-                )}
-              />
-              <img
-                src="/jsonrock-light.svg"
-                alt="JSONROCK"
-                className={cn(
-                  "h-5 sm:h-6 w-auto",
-                  type !== "text" ? "hidden dark:block" : "hidden",
-                )}
-              />
-            </a>
-            {!isValid && (
-              <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] sm:text-xs font-medium whitespace-nowrap">
-                Invalid
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5 sm:gap-4">
-            {/* Upload Button */}
-            {/* Upload Button - Hidden in Text Mode */}
-            {type !== "text" && (
-              <button
-                onClick={() => setIsUploadOpen(true)}
-                className={cn(
-                  "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 border border-zinc-200 transition-colors text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200",
-                  "dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
-                )}
-                title="Upload JSON"
-              >
-                <UploadCloud size={14} />
-                <span className="hidden lg:inline">Upload</span>
-              </button>
-            )}
-
-            {/* New JSON */}
-            <button
-              onClick={() => handleNew("json")}
-              className={cn(
-                "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 border border-zinc-200 transition-colors text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200",
-                type !== "text" &&
-                  "dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
-              )}
-              title="Create New JSON"
-            >
-              <FolderPlus size={14} />
-              <span className="hidden lg:inline">New JSON</span>
-            </button>
-
-            {/* New Text */}
-            <button
-              onClick={() => handleNew("text")}
-              className={cn(
-                "flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 border border-zinc-200 transition-colors text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200",
-                type !== "text" &&
-                  "dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
-              )}
-              title="Create New Text Chat"
-            >
-              <MessageSquarePlus size={14} />
-              <span className="hidden lg:inline">New Text</span>
-            </button>
-
-            {/* Save Button */}
-            {/* Save Status Indicator (Auto-save) */}
-            <div
-              className={cn(
-                "flex items-center gap-2 px-3 text-xs font-medium text-zinc-500 select-none",
-                type !== "text" && "dark:text-zinc-400",
-              )}
-            >
-              {isSaving ? (
-                <span>Saving...</span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <Check size={14} className="text-emerald-500" /> Saved
-                </span>
-              )}
-            </div>
-
-            <button
-              onClick={() => setIsShareOpen(true)}
-              className={cn(
-                "flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-md text-xs font-bold transition-all bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20",
-              )}
-            >
-              <LinkIcon size={14} />
-              <span className="hidden lg:inline">Share</span>
-            </button>
-
-            <div
-              className={cn(
-                "h-6 w-px bg-zinc-200 mx-0.5 sm:mx-1",
-                type !== "text" && "dark:bg-zinc-800",
-              )}
-            />
-
-            {/* Header Icons: Github */}
-            <a
-              href="https://github.com/Softcolon-Technology/jsonrock"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(
-                "p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-700 transition-colors flex items-center justify-center",
-                type !== "text" && "dark:hover:text-zinc-200",
-              )}
-              title="View Source on GitHub"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-              </svg>
-            </a>
-
-            {type !== "text" && <ThemeToggle />}
-          </div>
-        </header>
+        <EditorHeader
+          documentType={documentType}
+          documentSlug={documentSlug}
+          isJsonValid={isJsonValid}
+          onOpenUploadModal={setIsUploadModalOpen}
+          onCreateNewDocument={handleCreateNewDocument}
+          isAutoSaving={isAutoSaving}
+          onOpenShareModal={setIsShareModalOpen}
+        />
 
         {/* Split View */}
         <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
           {/* Editor Pane (Left/Top) */}
           <div
             style={
-              { "--left-panel-width": `${leftWidth}%` } as React.CSSProperties
+              {
+                "--left-panel-width": `${editorPanelWidthPercentage}%`,
+              } as React.CSSProperties
             }
             className={cn(
               "border-b lg:border-b-0 lg:border-r border-zinc-200 flex flex-col bg-white h-full",
-              type !== "text" && "dark:border-zinc-900 dark:bg-[#09090b]",
-              type === "text"
+              documentType !== "text" &&
+                "dark:border-zinc-900 dark:bg-[#09090b]",
+              documentType === "text"
                 ? "w-full"
                 : "w-full lg:w-[var(--left-panel-width)] lg:min-w-[300px]",
               // Mobile visibility toggle
@@ -993,14 +871,14 @@ export default function Home({
               mobileTab === "editor" ? "flex" : "hidden lg:flex",
             )}
           >
-            {type === "text" ? (
+            {documentType === "text" ? (
               <div className="flex-1 h-full relative">
                 <RichTextEditor
-                  content={jsonInput}
-                  onChange={handleJsonChange}
-                  readOnly={!canEdit}
-                  remoteContent={remoteCode?.code}
-                  forceLight={true}
+                  content={currentJsonContent}
+                  onChange={onJsonContentChange}
+                  readOnly={!hasEditPermission}
+                  remoteContent={syncedRemoteContent?.code}
+                  forceLightMode={true}
                 />
               </div>
             ) : (
@@ -1008,17 +886,17 @@ export default function Home({
                 <div className="flex-1 relative">
                   <JsonEditor
                     className="pt-14 lg:pt-0"
-                    defaultValue={jsonInput} // Initial Load Only
-                    remoteValue={remoteCode} // Updates Only
-                    onChange={handleJsonChange}
-                    readOnly={!canEdit}
+                    defaultValue={currentJsonContent} // Initial Load Only
+                    remoteValue={syncedRemoteContent} // Updates Only
+                    onChange={onJsonContentChange}
+                    readOnly={!hasEditPermission}
                     options={{
                       padding: { top: 16, bottom: 100 }, // Ensure last lines are visible above floating alert
                     }}
                   />
 
                   {/* Error Alert Overlay */}
-                  {!isValid && errorMessage && (
+                  {!isJsonValid && jsonValidationError && (
                     <div className="absolute bottom-4 left-4 right-4 lg:bottom-6 lg:left-8 lg:right-8 z-30 animate-in fade-in slide-in-from-bottom-2">
                       <div className="bg-white/95 dark:bg-zinc-900/95 border border-red-200 dark:border-red-900/50 backdrop-blur-md p-3 lg:p-4 rounded-xl shadow-xl flex items-start gap-3 lg:gap-4 ring-1 ring-black/5 dark:ring-white/5">
                         <div className="p-1.5 lg:p-2 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/30 rounded-lg text-red-600 dark:text-red-500 shrink-0 shadow-sm">
@@ -1029,14 +907,14 @@ export default function Home({
                             <h4 className="text-xs lg:text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
                               Invalid JSON
                             </h4>
-                            {errorMessage.line && (
+                            {jsonValidationError.line && (
                               <span className="text-[10px] font-mono font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 px-1.5 lg:px-2 py-0.5 rounded-full whitespace-nowrap shadow-sm">
-                                Line {errorMessage.line}
+                                Line {jsonValidationError.line}
                               </span>
                             )}
                           </div>
                           <p className="text-[11px] lg:text-xs text-zinc-600 dark:text-zinc-400 mt-1 lg:mt-1.5 font-mono break-words leading-relaxed border-l-2 border-red-200 dark:border-red-900/50 pl-2 lg:pl-3">
-                            {errorMessage.message}
+                            {jsonValidationError.message}
                           </p>
                         </div>
                       </div>
@@ -1059,7 +937,7 @@ export default function Home({
           </div>
 
           {/* Resizer Handle */}
-          {type !== "text" && (
+          {documentType !== "text" && (
             <div
               className={`hidden lg:flex w-1 bg-transparent cursor-col-resize z-40 items-center justify-center transition-colors`}
               onMouseDown={startResizing}
@@ -1072,7 +950,7 @@ export default function Home({
           <div
             style={
               {
-                "--right-panel-width": `${100 - leftWidth}%`,
+                "--right-panel-width": `${100 - editorPanelWidthPercentage}%`,
               } as React.CSSProperties
             }
             className={cn(
@@ -1083,7 +961,7 @@ export default function Home({
               // Mobile visibility toggle
               mobileTab === "viewer"
                 ? "flex flex-col"
-                : type === "text"
+                : documentType === "text"
                   ? "hidden"
                   : "hidden lg:flex lg:flex-col",
             )}
@@ -1104,10 +982,10 @@ export default function Home({
               {/* Graph View Button */}
               <div className="relative group">
                 <button
-                  onClick={() => setActiveTab("visualize")}
+                  onClick={() => setCurrentViewMode("visualize")}
                   className={cn(
                     "p-2 rounded-full shadow-lg border backdrop-blur-sm transition-all duration-200",
-                    activeTab === "visualize"
+                    currentViewMode === "visualize"
                       ? "bg-emerald-600 text-white border-emerald-500 shadow-emerald-900/20 scale-105"
                       : "bg-white/80 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 hover:scale-105",
                   )}
@@ -1123,10 +1001,11 @@ export default function Home({
               {/* Tree View Button */}
               <div className="relative group">
                 <button
-                  onClick={() => setActiveTab("tree")}
+                  onClick={() => setCurrentViewMode("tree")}
                   className={cn(
                     "p-2 rounded-full shadow-lg border backdrop-blur-sm transition-all duration-200",
-                    activeTab == "formatter" || activeTab == "visualize"
+                    currentViewMode == "formatter" ||
+                      currentViewMode == "visualize"
                       ? "bg-white/80 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 hover:scale-105"
                       : "bg-emerald-600 text-white border-emerald-500 shadow-emerald-900/20 scale-105",
                   )}
@@ -1141,10 +1020,10 @@ export default function Home({
               {/* Formatter View Button */}
               <div className="relative group">
                 <button
-                  onClick={() => setActiveTab("formatter")}
+                  onClick={() => setCurrentViewMode("formatter")}
                   className={cn(
                     "p-2 rounded-full shadow-lg border backdrop-blur-sm transition-all duration-200",
-                    activeTab === "formatter"
+                    currentViewMode === "formatter"
                       ? "bg-emerald-600 text-white border-emerald-500 shadow-emerald-900/20 scale-105"
                       : "bg-white/80 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 hover:scale-105",
                   )}
@@ -1156,7 +1035,7 @@ export default function Home({
                 </div>
               </div>
             </div>
-            {isValid && !parsedJson ? (
+            {isJsonValid && !parsedJsonData ? (
               <div className="h-full w-full flex flex-col items-center justify-center pl-16 animate-in fade-in zoom-in-95 duration-200">
                 <div className="mb-4 p-4 rounded-full bg-zinc-200 dark:bg-zinc-800/50">
                   <Code2 size={48} className="opacity-50 text-zinc-400" />
@@ -1173,32 +1052,32 @@ export default function Home({
                 <div
                   className={cn(
                     "h-full w-full",
-                    activeTab !== "visualize" && "hidden",
+                    currentViewMode !== "visualize" && "hidden",
                   )}
                 >
-                  {layouting ? (
+                  {isLayoutCalculating ? (
                     <div className="flex h-full items-center justify-center text-zinc-500 gap-2">
                       <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
                       Layouting...
                     </div>
                   ) : (
-                    <GraphView nodes={nodes} edges={edges} />
+                    <GraphView nodes={graphNodes} edges={graphEdges} />
                   )}
                 </div>
 
                 <div
                   className={cn(
                     "h-full w-full overflow-hidden pl-16",
-                    activeTab !== "tree" && "hidden",
+                    currentViewMode !== "tree" && "hidden",
                   )}
                 >
-                  <TreeExplorer data={parsedJson} />
+                  <TreeExplorer data={parsedJsonData} />
                 </div>
 
                 <div
                   className={cn(
                     "h-full w-full flex flex-col",
-                    activeTab !== "formatter" && "hidden",
+                    currentViewMode !== "formatter" && "hidden",
                   )}
                 >
                   <div className="flex items-center justify-between pl-4 pr-4 py-1 bg-gradient-to-b from-gray-50 to-gray-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 h-11 shrink-0 ml-16">
@@ -1207,8 +1086,8 @@ export default function Home({
                         JSON Formatter
                       </span>
                       <select
-                        value={tabSize}
-                        onChange={(e) => setTabSize(e.target.value)}
+                        value={indentationSize}
+                        onChange={(e) => setIndentationSize(e.target.value)}
                         className="bg-zinc-100 dark:bg-zinc-800 border-none text-zinc-900 dark:text-zinc-300 text-xs rounded px-2 py-1 focus:ring-1 focus:ring-emerald-500/50 outline-none cursor-pointer"
                       >
                         <option value="2">2 Tabs</option>
@@ -1221,7 +1100,7 @@ export default function Home({
                       onClick={handleCopy}
                       className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors group relative"
                     >
-                      {copied ? (
+                      {isClipboardCopied ? (
                         <Check size={14} className="text-emerald-500" />
                       ) : (
                         <Copy
@@ -1250,16 +1129,16 @@ export default function Home({
         </main>
       </div>
       <ModalAlert
-        isOpen={alertConfig.isOpen}
-        onClose={closeAlert}
-        title={alertConfig.title}
-        message={alertConfig.message}
-        type={alertConfig.type}
-        forceLight={type === "text"}
+        isOpen={alertState.isOpen}
+        onClose={dismissAlert}
+        title={alertState.title}
+        message={alertState.message}
+        type={alertState.type}
+        forceLightMode={documentType === "text"}
       />
 
       {/* Upload Modal */}
-      {isUploadOpen && (
+      {isUploadModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95">
             <div className="flex items-center justify-between mb-4">
@@ -1268,7 +1147,7 @@ export default function Home({
                 Upload JSON File
               </h3>
               <button
-                onClick={() => setIsUploadOpen(false)}
+                onClick={() => setIsUploadModalOpen(false)}
                 className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
               >
                 <X size={20} />
@@ -1290,11 +1169,11 @@ export default function Home({
                   type="file"
                   accept=".json"
                   className="hidden"
-                  onChange={handleFileUpload}
+                  onChange={handleUploadFile}
                 />
               </div>
 
-              {isUploading && (
+              {isFileUploading && (
                 <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-500 animate-pulse">
                   <span>Uploading and processing...</span>
                 </div>
@@ -1302,9 +1181,9 @@ export default function Home({
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
-                  onClick={() => setIsUploadOpen(false)}
+                  onClick={() => setIsUploadModalOpen(false)}
                   className="px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-                  disabled={isUploading}
+                  disabled={isFileUploading}
                 >
                   Cancel
                 </button>
@@ -1315,17 +1194,19 @@ export default function Home({
       )}
 
       {/* Unlock Modal */}
-      {isLocked && (
+      {isPasswordLocked && (
         <div
           className={cn(
             "fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4",
-            type === "text" ? "bg-white/80" : "bg-white/80 dark:bg-black/80",
+            documentType === "text"
+              ? "bg-white/80"
+              : "bg-white/80 dark:bg-black/80",
           )}
         >
           <div
             className={cn(
               "w-full max-w-md space-y-4 rounded-xl border p-6 shadow-2xl",
-              type === "text"
+              documentType === "text"
                 ? "bg-white border-zinc-200"
                 : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800",
             )}
@@ -1334,7 +1215,7 @@ export default function Home({
               <div
                 className={cn(
                   "flex h-12 w-12 items-center justify-center rounded-full border",
-                  type === "text"
+                  documentType === "text"
                     ? "bg-zinc-100 border-zinc-200 text-zinc-500"
                     : "bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400",
                 )}
@@ -1344,7 +1225,7 @@ export default function Home({
               <h2
                 className={cn(
                   "text-lg font-semibold",
-                  type === "text"
+                  documentType === "text"
                     ? "text-zinc-900"
                     : "text-zinc-900 dark:text-zinc-100",
                 )}
@@ -1354,7 +1235,7 @@ export default function Home({
               <p
                 className={cn(
                   "text-sm",
-                  type === "text"
+                  documentType === "text"
                     ? "text-zinc-500"
                     : "text-zinc-500 dark:text-zinc-400",
                 )}
@@ -1367,45 +1248,45 @@ export default function Home({
             <div className="space-y-4">
               <div className="relative">
                 <input
-                  type={showPassword ? "text" : "password"}
+                  type={isPasswordVisible ? "text" : "password"}
                   placeholder="Enter password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={documentPassword}
+                  onChange={(e) => setDocumentPassword(e.target.value)}
                   className={cn(
                     "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 pr-10",
-                    type === "text"
+                    documentType === "text"
                       ? "bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-emerald-500"
                       : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:border-emerald-500",
                   )}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") handleUnlock();
+                    if (e.key === "Enter") handleUnlockDocument();
                   }}
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => setIsPasswordVisible(!isPasswordVisible)}
                   className={cn(
                     "absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700 transition-colors",
-                    type !== "text" &&
+                    documentType !== "text" &&
                       "dark:text-zinc-400 dark:hover:text-zinc-200",
                   )}
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {isPasswordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
 
-              {unlockError && (
+              {unlockErrorMessage && (
                 <div className="text-red-400 text-xs text-center border border-red-500/20 bg-red-500/10 p-2 rounded">
-                  {unlockError}
+                  {unlockErrorMessage}
                 </div>
               )}
 
               <div className="flex items-center gap-3">
                 <button
-                  onClick={handleCancelUnlock}
+                  onClick={cancelUnlockAttempt}
                   className={cn(
                     "flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
-                    type === "text"
+                    documentType === "text"
                       ? "bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"
                       : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100",
                   )}
@@ -1413,12 +1294,12 @@ export default function Home({
                   Cancel
                 </button>
                 <button
-                  onClick={handleUnlock}
-                  disabled={unlockLoading || !password}
+                  onClick={handleUnlockDocument}
+                  disabled={isUnlocking || !documentPassword}
                   className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {unlockLoading ? "Verifying..." : "Unlock"}
-                  {!unlockLoading && <ArrowRight size={16} />}
+                  {isUnlocking ? "Verifying..." : "Unlock"}
+                  {!isUnlocking && <ArrowRight size={16} />}
                 </button>
               </div>
             </div>
@@ -1427,16 +1308,16 @@ export default function Home({
       )}
 
       <SharePopover
-        isOpen={isShareOpen}
-        onClose={() => setIsShareOpen(false)}
-        initialAccessType={accessType}
-        initialIsPrivate={isPrivate}
-        initialPassword={password}
-        canConfigure={isOwner}
-        isLockedPrivate={isPersistedPrivate}
-        onShare={handleShare}
-        isLoading={isSaving}
-        forceLight={type === "text"}
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        defaultAccessLevel={userAccessLevel}
+        defaultIsPrivate={isDocumentPrivate}
+        defaultPassword={documentPassword}
+        hasPermissionToConfigure={isCurrentUserOwner}
+        isPrivacyLocked={isPrivacyLocked}
+        onSaveShareSettings={handleShareDocument}
+        isSavingSettings={isAutoSaving}
+        forceLightMode={documentType === "text"}
       />
     </div>
   );
