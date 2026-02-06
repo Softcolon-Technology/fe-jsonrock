@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Edge, Node } from "reactflow";
 import {
   Code2,
@@ -76,12 +76,20 @@ export default function Home({
 }: HomeProps) {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const urlSlug = params?.slug as string | undefined;
+
+  const paramView = searchParams?.get("view") as JsonShareMode | undefined;
+  const paramType = searchParams?.get("type") as ShareType | undefined;
+
+  // Determine effective initial values
+  const effectiveFeatureMode = initialRecord?.type || paramType || featureMode;
+  const effectiveViewMode = initialRecord?.mode || paramView || "visualize";
 
   const [currentJsonContent, setCurrentJsonContent] = useState<string>(
     initialRecord
       ? initialRecord.json
-      : featureMode === "text"
+      : effectiveFeatureMode === "text"
         ? '<p style="font-size: 14pt">Type your text here...</p>'
         : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}',
   );
@@ -95,11 +103,10 @@ export default function Home({
   const [graphEdges, setGraphEdges] = useState<Edge[]>([]);
   const [currentViewMode, setCurrentViewMode] = useState<
     "visualize" | "tree" | "formatter"
-  >(initialRecord?.mode || "visualize");
+  >(effectiveViewMode);
 
-  const [documentType, setDocumentType] = useState<ShareType>(
-    initialRecord?.type || featureMode,
-  );
+  const [documentType, setDocumentType] =
+    useState<ShareType>(effectiveFeatureMode);
 
   const [isJsonValid, setIsJsonValid] = useState<boolean>(true);
   const [isLayoutCalculating, setIsLayoutCalculating] =
@@ -979,10 +986,38 @@ export default function Home({
 
             {/* Navigation: Sidebar for Graph/Formatter/Tree */}
             <div className="absolute top-4 left-4 z-50 flex flex-col gap-3">
+              {/* Formatter View Button */}
+              <div className="relative group">
+                <button
+                  onClick={() => {
+                    setCurrentViewMode("formatter");
+                    const newUrl = new URL(window.location.href);
+                    newUrl.searchParams.set("view", "formatter");
+                    router.push(newUrl.pathname + newUrl.search);
+                  }}
+                  className={cn(
+                    "p-2 rounded-full shadow-lg border backdrop-blur-sm transition-all duration-200",
+                    currentViewMode === "formatter"
+                      ? "bg-emerald-600 text-white border-emerald-500 shadow-emerald-900/20 scale-105"
+                      : "bg-white/80 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 hover:scale-105",
+                  )}
+                >
+                  <Code2 size={18} />
+                </button>
+                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2 py-1 bg-zinc-900 dark:bg-zinc-800 text-white dark:text-zinc-200 text-xs font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-xl border border-zinc-800 dark:border-zinc-700">
+                  JSON Formatter
+                </div>
+              </div>
+
               {/* Graph View Button */}
               <div className="relative group">
                 <button
-                  onClick={() => setCurrentViewMode("visualize")}
+                  onClick={() => {
+                    setCurrentViewMode("visualize");
+                    const newUrl = new URL(window.location.href);
+                    newUrl.searchParams.set("view", "visualize");
+                    router.push(newUrl.pathname + newUrl.search);
+                  }}
                   className={cn(
                     "p-2 rounded-full shadow-lg border backdrop-blur-sm transition-all duration-200",
                     currentViewMode === "visualize"
@@ -1001,37 +1036,23 @@ export default function Home({
               {/* Tree View Button */}
               <div className="relative group">
                 <button
-                  onClick={() => setCurrentViewMode("tree")}
+                  onClick={() => {
+                    setCurrentViewMode("tree");
+                    const newUrl = new URL(window.location.href);
+                    newUrl.searchParams.set("view", "tree");
+                    router.push(newUrl.pathname + newUrl.search);
+                  }}
                   className={cn(
                     "p-2 rounded-full shadow-lg border backdrop-blur-sm transition-all duration-200",
-                    currentViewMode == "formatter" ||
-                      currentViewMode == "visualize"
-                      ? "bg-white/80 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 hover:scale-105"
-                      : "bg-emerald-600 text-white border-emerald-500 shadow-emerald-900/20 scale-105",
+                    currentViewMode === "tree"
+                      ? "bg-emerald-600 text-white border-emerald-500 shadow-emerald-900/20 scale-105"
+                      : "bg-white/80 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 hover:scale-105",
                   )}
                 >
                   <LayoutTemplate size={18} />
                 </button>
                 <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2 py-1 bg-zinc-900 dark:bg-zinc-800 text-white dark:text-zinc-200 text-xs font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-xl border border-zinc-800 dark:border-zinc-700">
                   Tree Explorer
-                </div>
-              </div>
-
-              {/* Formatter View Button */}
-              <div className="relative group">
-                <button
-                  onClick={() => setCurrentViewMode("formatter")}
-                  className={cn(
-                    "p-2 rounded-full shadow-lg border backdrop-blur-sm transition-all duration-200",
-                    currentViewMode === "formatter"
-                      ? "bg-emerald-600 text-white border-emerald-500 shadow-emerald-900/20 scale-105"
-                      : "bg-white/80 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 hover:scale-105",
-                  )}
-                >
-                  <Code2 size={18} />
-                </button>
-                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2 py-1 bg-zinc-900 dark:bg-zinc-800 text-white dark:text-zinc-200 text-xs font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-xl border border-zinc-800 dark:border-zinc-700">
-                  JSON Formatter
                 </div>
               </div>
             </div>

@@ -87,7 +87,7 @@ export default function Navbar() {
         {/* Desktop CTA */}
         <div className="hidden md:flex items-center gap-4">
           <Link
-            href="/editor"
+            href="/editor?view=formatter"
             className="px-5 py-2.5 bg-[#00B3B7] hover:bg-[#00B3B7] text-white text-sm font-semibold rounded-lg transition-all hover:shadow-lg"
           >
             Get Started
@@ -153,7 +153,7 @@ export default function Navbar() {
         {/* Sidebar Footer */}
         <div className="p-6 border-t border-gray-200 bg-gray-50 mt-auto shrink-0">
           <Link
-            href="/editor"
+            href="/editor?view=formatter"
             className="flex w-full items-center justify-center px-6 py-3 bg-[#00B3B7] hover:bg-[#00B0B4] text-white text-base font-semibold rounded-lg transition-all shadow-md active:scale-95 mb-4"
             onClick={() => setIsOpen(false)}
           >

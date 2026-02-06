@@ -1,12 +1,10 @@
+"use client";
+
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { MdArrowUpward } from "react-icons/md";
 
 const features = [
-  {
-    image: "/json-viewer.png", // Add your image path here
-    title: "JSON Viewer",
-    description: "Instantly explore deeply nested objects with precision.",
-  },
   {
     image: "/upload.png", // Add your image path here
     title: "Format & Upload",
@@ -18,6 +16,11 @@ const features = [
     description: "Visualize complex data relationships with interactive nodes.",
   },
   {
+    image: "/json-viewer.png", // Add your image path here
+    title: "Tree Explorer",
+    description: "Instantly explore deeply nested objects with precision.",
+  },
+  {
     image: "/text-editor.png", // Add your image path here
     title: "Rich-Text Editor",
     description: "A sleek dual-mode document interface for technical teams.",
@@ -25,6 +28,27 @@ const features = [
 ];
 
 export default function FeaturesSection() {
+  const router = useRouter();
+
+  const handleNavigation = (index: number) => {
+    switch (index) {
+      case 0:
+        router.push("/editor?view=formatter");
+        break;
+      case 1:
+        router.push("/editor?view=visualize");
+        break;
+      case 2:
+        router.push("/editor?view=tree");
+        break;
+      case 3:
+        router.push("/editor?type=text");
+        break;
+      default:
+        router.push("/editor");
+    }
+  };
+
   return (
     <section
       className="pt-10 md:pt-0 pb-16 md:pb-24 px-6 max-w-7xl mx-auto"
@@ -45,7 +69,11 @@ export default function FeaturesSection() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
         {features.map((feature, index) => (
-          <FeatureCard key={index} {...feature} />
+          <FeatureCard
+            key={index}
+            {...feature}
+            onClick={() => handleNavigation(index)}
+          />
         ))}
       </div>
     </section>
@@ -56,13 +84,18 @@ function FeatureCard({
   image,
   title,
   description,
+  onClick,
 }: {
   image: string;
   title: string;
   description: string;
+  onClick: () => void;
 }) {
   return (
-    <div className="neubrutalist-card p-8 rounded-2xl relative overflow-hidden flex flex-col group h-full">
+    <div
+      onClick={onClick}
+      className="neubrutalist-card p-8 rounded-2xl relative overflow-hidden flex flex-col group h-full cursor-pointer hover:scale-[1.02] transition-all duration-300"
+    >
       {/* Grid Pattern Overlay */}
       <div className="absolute inset-0 card-inner-grid opacity-30 pointer-events-none"></div>
 
