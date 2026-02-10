@@ -101,16 +101,30 @@ const EditorHeader = ({
 
         {/* Share Button (Icon Button) */}
         <button
-          onClick={() => onOpenShareModal(true)}
+          onClick={() => !documentSlug ? undefined : onOpenShareModal(true)}
+          disabled={!documentSlug}
           className={cn(
-            "p-2 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-all focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none",
-            documentType !== "text" &&
-              "dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800",
-            // Highlight it slightly as it's important
-            "text-emerald-600 dark:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20",
+            "p-2 rounded-md transition-all focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none",
+            !documentSlug
+              ? // Disabled state
+              "text-zinc-300 dark:text-zinc-600 cursor-not-allowed opacity-50"
+              : // Enabled state
+              cn(
+                "text-emerald-600 dark:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer",
+                documentType !== "text" &&
+                "dark:hover:text-emerald-400",
+              ),
           )}
-          title="Share Link"
-          aria-label="Share Link"
+          title={
+            !documentSlug
+              ? "Save document first to share"
+              : "Share Link"
+          }
+          aria-label={
+            !documentSlug
+              ? "Share Link (disabled - save document first)"
+              : "Share Link"
+          }
         >
           <LinkIcon size={18} />
         </button>
@@ -128,7 +142,7 @@ const EditorHeader = ({
           className={cn(
             "p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-all flex items-center justify-center focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none",
             documentType !== "text" &&
-              "dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800",
+            "dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800",
           )}
           title="View Source on GitHub"
           aria-label="View Source on GitHub"
