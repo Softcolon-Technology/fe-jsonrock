@@ -9,8 +9,7 @@ jobs:
     runs-on: jsonrock prod
     environment: production
     env:
-      PORT: 3000
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      PORT: 3004
       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
       NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
 
