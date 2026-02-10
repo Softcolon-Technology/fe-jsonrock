@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
-import Home from "../../page";
+import EditorPage from "@/app/editor-page";
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export default async function SharePage({ params }: Props) {
+export default async function EditorSlugPage({ params }: Props) {
   const resolvedParams = await params;
 
   let initialRecord: any;
@@ -36,13 +36,13 @@ export default async function SharePage({ params }: Props) {
         createdAt: new Date().toISOString(),
       };
     } else {
-      // Record doesn't exist - redirect to home
-      redirect("/");
+      // Record doesn't exist - redirect to editor
+      redirect("/editor");
     }
   } catch (error) {
     console.error("Error fetching share link:", error);
-    redirect("/");
+    redirect("/editor");
   }
 
-  return <Home initialRecord={initialRecord} />;
+  return <EditorPage initialRecord={initialRecord} />;
 }
