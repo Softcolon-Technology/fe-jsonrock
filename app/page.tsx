@@ -60,7 +60,7 @@ function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return null; // Avoid hydration mismatch
+  if (!mounted) return null;
 
   return (
     <button
@@ -99,7 +99,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   );
 
   const [type, setType] = useState<"json" | "text">(initialRecord?.type || featureMode);
-  // Remove unused setFontSize if not used, or keep if future proofing
   const [fontSize, setFontSize] = useState(14);
 
   const [isValid, setIsValid] = useState(true);
@@ -107,11 +106,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   const [copied, setCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<{ message: string; line?: number } | null>(null);
 
-  // Split state: 
-  // 1. jsonInput = Source of Truth for Saving/Graph (Updated by local typing)
-  // 2. remoteCode = Source of Truth for Editor Display (Updated ONLY by Socket/System)
   const [remoteCode, setRemoteCode] = useState<{ code: string; nonce: number } | null>(null);
-
   const [tabSize, setTabSize] = useState<string>("2");
 
   // Loading State
@@ -124,7 +119,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
 
   const [isOwner, setIsOwner] = useState(false);
 
-  // Helper to determine ownership (moved before canEdit initialization)
   const checkOwnership = useCallback((targetSlug: string) => {
     const ownedSlugs = Cookies.get("json-cracker-owned");
     if (ownedSlugs) {
@@ -138,25 +132,18 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     return false;
   }, []);
 
-  // Initialize canEdit based on initialRecord to prevent race condition
   const [canEdit, setCanEdit] = useState(() => {
-    if (!initialRecord?.slug) return true; // New document - always editable
+    if (!initialRecord?.slug) return true;
     const isOwned = checkOwnership(initialRecord.slug);
-    if (isOwned) return true; // Owner always can edit
-    return initialRecord.accessType === "editor"; // Non-owner: check accessType
+    if (isOwned) return true;
+    return initialRecord.accessType === "editor";
   });
-
-  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
-  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
-  // Sync state when URL slug changes (Navigation / Refresh)
 
   const syncFromData = useCallback((data: any) => {
     let content = "";
-    // Handle new API structure { data: ..., type: ... }
     if (data.type === 'json' && typeof data.data === 'object') {
       content = JSON.stringify(data.data, null, 2);
     } else {
-      // Fallback or Text mode
       content = data.data || data.json || "";
     }
 
@@ -168,10 +155,8 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     setActiveTab(data.mode || "visualize");
     setRemoteCode({ code: content, nonce: Date.now() });
 
-    // Handle Locking
     if (data.isPrivate) {
       setIsPersistedPrivate(true);
-      // If content is missing/masked, it is locked.
       const isLockedState = (data.data === null || data.data === undefined);
       setIsLocked(isLockedState);
     } else {
@@ -179,7 +164,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
       setIsPersistedPrivate(false);
     }
 
-    // CRITICAL: Update lastSavedContent to current loaded content
     lastSavedContent.current = content;
 
     if (data.slug) {
@@ -197,10 +181,9 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     }
   }, [checkOwnership]);
 
-  // Sync state when URL slug changes (Navigation / Refresh)
+  // Sync state when URL slug changes
   useEffect(() => {
     if (urlSlug) {
-      // ALWAYS Fetch from API on navigation/load
       setIsLoading(true);
       const controller = new AbortController();
 
@@ -227,7 +210,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
 
       return () => controller.abort();
     } else {
-      // NAVIGATED TO ROOT (New File)
       const defaultContent = featureMode === 'text' ? '<p style="font-size: 14pt">Type your text here...</p>' : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
 
       if (slug !== null) {
@@ -257,21 +239,19 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     }
     if (!slugs.includes(newSlug)) {
       slugs.push(newSlug);
-      Cookies.set("json-cracker-owned", JSON.stringify(slugs), { expires: 30 }); // 30 days
+      Cookies.set("json-cracker-owned", JSON.stringify(slugs), { expires: 30 });
     }
     setIsOwner(true);
   };
 
   const [password, setPassword] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  // Track if the record is indefinitely private (persisted as private)
   const [isPersistedPrivate, setIsPersistedPrivate] = useState(
     initialRecord?.isPrivate || false
   );
 
   const [isShareOpen, setIsShareOpen] = useState(false);
 
-  // Locked State for Private Links
   const [isLocked, setIsLocked] = useState(
     (initialRecord?.isPrivate && !initialRecord?.json) || false
   );
@@ -282,84 +262,111 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   // Refs for stable callback access
   const slugRef = React.useRef(slug);
   const isLockedRef = React.useRef(isLocked);
-  const isPrivateRef = React.useRef(isPrivate);
-  const isValidRef = React.useRef(isValid);
+  const canEditRef = React.useRef(canEdit);
 
   useEffect(() => {
     slugRef.current = slug;
     isLockedRef.current = isLocked;
-    isPrivateRef.current = isPrivate;
-    isValidRef.current = isValid;
-  }, [slug, isLocked, isPrivate, isValid]);
+    canEditRef.current = canEdit;
+  }, [slug, isLocked, canEdit]);
 
   const emitTimeout = React.useRef<NodeJS.Timeout | null>(null);
 
-  // Stable Change Handler
+  // OPTIMIZED: Stable Change Handler with increased debounce
   const handleJsonChange = useCallback((newCode: string | undefined) => {
     const code = newCode || "";
     setJsonInput(code);
 
-    // Debounce socket emission to prevent flooding/lag
-    if (emitTimeout.current) clearTimeout(emitTimeout.current);
+    // Clear previous timeout
+    if (emitTimeout.current) {
+      clearTimeout(emitTimeout.current);
+    }
 
+    // IMPROVED: Increased debounce from 100ms to 300ms
     emitTimeout.current = setTimeout(() => {
-      // Emit change if we have a slug and aren't locked (regardless of validity)
-      if (slugRef.current && !isLockedRef.current) {
+      // Only emit if we have a slug, aren't locked, and can edit
+      if (slugRef.current && !isLockedRef.current && canEditRef.current) {
         const socket = getSocket();
         if (socket && socket.connected) {
           socket.emit("code-change", { slug: slugRef.current, newCode: code });
         }
       }
-    }, 100);
-  }, []); // ID IS STABLE NOW
+    }, 300);
+  }, []);
 
-  // Socket Effect - OPTIMIZED for Production
+  // CRITICAL FIX: Cleanup emitTimeout on unmount
+  useEffect(() => {
+    return () => {
+      if (emitTimeout.current) {
+        clearTimeout(emitTimeout.current);
+        emitTimeout.current = null;
+      }
+    };
+  }, []);
+
+  // OPTIMIZED Socket Effect - Only depends on slug now
   useEffect(() => {
     if (!slug) return;
 
-    // Skip socket connection for locked private content (no collaboration possible)
+    // Skip socket for locked private content
     if (isPrivate && isLocked) return;
 
     const socket = getSocket();
 
     const onConnect = () => {
       socket.emit("join-room", slug);
+      console.log(`[Socket] Joined room: ${slug}`);
     };
 
     const onCodeChange = (newCode: string) => {
-      // If we receive an update, we treat it as the source of truth
+      console.log(`[Socket] Received code update for room: ${slug}`);
       setJsonInput(newCode);
       setRemoteCode({ code: newCode, nonce: Date.now() });
-      // CRITICAL: Mark as saved to prevent duplicate auto-save from this browser
       lastSavedContent.current = newCode;
     };
 
-    // CRITICAL FIX: Only connect if not already connected
-    // This prevents reconnection churn when slug changes
+    const onError = (error: any) => {
+      console.error("[Socket] Error:", error);
+    };
+
+    // Only connect if not already connected
     if (!socket.connected) {
       socket.connect();
-    } else {
-      // Already connected, just join the new room
-      onConnect();
     }
 
+    // Attach event listeners
     socket.on("connect", onConnect);
     socket.on("code-change", onCodeChange);
+    socket.on("error", onError);
 
-    // Handle immediate connection case
+    // Join room if already connected
     if (socket.connected) {
       onConnect();
     }
 
     return () => {
-      // CRITICAL FIX: Only remove OUR listeners, don't disconnect
-      // This prevents reconnection churn when component re-renders
+      // Clean up listeners
       socket.off("connect", onConnect);
       socket.off("code-change", onCodeChange);
-      // Leave the room but stay connected for potential reuse
+      socket.off("error", onError);
+
+      // Leave room but keep socket connected
       socket.emit("leave-room", slug);
+      console.log(`[Socket] Left room: ${slug}`);
     };
-  }, [slug, isLocked]); // CRITICAL: Include isLocked so socket connects after unlock
+  }, [slug]); // FIXED: Removed isLocked and isPrivate from dependencies
+
+  // Separate effect to handle locked state changes
+  useEffect(() => {
+    if (slug && isPrivate && isLocked) {
+      // If document becomes locked, leave the room
+      const socket = getSocket();
+      if (socket.connected) {
+        socket.emit("leave-room", slug);
+        console.log(`[Socket] Left room due to lock: ${slug}`);
+      }
+    }
+  }, [slug, isPrivate, isLocked]);
 
   // Alert State
   const [alertConfig, setAlertConfig] = useState<{
@@ -398,10 +405,8 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         return;
       }
 
-      // Success
       syncFromData(data);
 
-      // Check if I am actually the owner (maybe I created it on this device?)
       const ownedSlugs = Cookies.get("json-cracker-owned");
       if (ownedSlugs) {
         try {
@@ -427,7 +432,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     router.push("/");
   };
 
-  // New Button Handler
   const handleNew = async (specificType?: 'json' | 'text') => {
     const targetType = (typeof specificType === 'string') ? specificType : type;
     const isText = targetType === 'text';
@@ -437,15 +441,14 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     setSlug(null);
     setIsPrivate(false);
     setIsPersistedPrivate(false);
-    setAccessType("viewer"); // Default for new link settings
-    setCanEdit(true); // New file is always editable
+    setAccessType("viewer");
+    setCanEdit(true);
     setPassword("");
     setRemoteCode({
       code: initialContent,
       nonce: Date.now()
     });
 
-    // Create initial record
     setIsSaving(true);
     try {
       const res = await fetch("/api/share", {
@@ -462,7 +465,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
       if (data.slug) {
         setSlug(data.slug);
         setAccessType(data.accessType || "editor");
-        setCanEdit(true); // Implicitly editor of new file
+        setCanEdit(true);
         setIsOwner(true);
         setType(data.type || targetType);
         addOwnership(data.slug);
@@ -476,7 +479,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     }
   };
 
-  // Save Button Handler
   const handleSave = async (silent = false) => {
     if (!slug) return;
 
@@ -494,7 +496,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
           json: jsonInput,
           mode: activeTab,
           isPrivate,
-          accessType, // Preserve current access settings
+          accessType,
           password: isPrivate ? password : undefined,
           type
         })
@@ -506,7 +508,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
           addOwnership(slug);
         }
         if (isPrivate) setIsPersistedPrivate(true);
-        lastSavedContent.current = jsonInput; // Update last saved reference
+        lastSavedContent.current = jsonInput;
         if (!silent) showAlert("Saved Successfully", "Your changes have been saved.", "success");
       } else {
         const err = data;
@@ -520,10 +522,8 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     }
   };
 
-
-
   // Resizable Pane Logic
-  const [leftWidth, setLeftWidth] = useState(40); // Default 40%
+  const [leftWidth, setLeftWidth] = useState(40);
   const [isDragging, setIsDragging] = useState(false);
 
   const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
@@ -538,7 +538,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   const resize = useCallback((mouseMoveEvent: MouseEvent) => {
     if (isDragging) {
       const newWidth = (mouseMoveEvent.clientX / window.innerWidth) * 100;
-      // Constraint between 20% and 80%
       if (newWidth > 20 && newWidth < 80) {
         setLeftWidth(newWidth);
       }
@@ -570,7 +569,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
 
     if (file.size > 2 * 1024 * 1024) {
       showAlert("Upload Failed", "File size exceeds the 2MB limit.", "error");
-      e.target.value = ""; // Reset input
+      e.target.value = "";
       setIsUploadOpen(false);
       return;
     }
@@ -590,7 +589,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         throw new Error(data.error || "Upload failed");
       }
 
-      // Success - Redirect
       addOwnership(data.slug);
       router.push(`/share/${data.slug}`);
 
@@ -602,14 +600,12 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   };
 
   const handleShare = async (settings: { accessType: ShareAccessType; isPrivate: boolean; password?: string }) => {
-    // Validate
     if (settings.isPrivate && (!settings.password || settings.password.length < 4)) {
       showAlert("Invalid Password", "Password must be at least 4 characters.", "error");
       return;
     }
 
     setIsSaving(true);
-    // If no slug, create new
     const method = slug ? "PUT" : "POST";
     const url = slug ? `/api/share/${slug}` : "/api/share";
 
@@ -632,22 +628,19 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         throw new Error(data.error || "Share failed");
       }
 
-      // Success
       const newSlug = data.slug || slug;
       if (newSlug !== slug) {
         setSlug(newSlug);
-        addOwnership(newSlug); // Mark as owner of new/updated slug
+        addOwnership(newSlug);
         const route = type === 'text' ? '/share/text/' : '/share/';
         router.push(`${route}${newSlug}`);
       }
 
-      // Update local state
       setAccessType(settings.accessType);
       setIsPrivate(settings.isPrivate);
       if (settings.isPrivate) setIsPersistedPrivate(true);
       if (settings.password) setPassword(settings.password);
 
-      // Copy Link
       const route = type === 'text' ? '/share/text/' : '/share/';
       const link = `${window.location.origin}${route}${newSlug}`;
       let message = "Settings saved and link copied to clipboard!";
@@ -672,7 +665,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
   // Debounce the input for Layout calculations (500ms)
   const debouncedJsonInput = useDebounce(jsonInput, 500);
 
-  // Layout Effect - Depends on debounced input
+  // Layout Effect
   useEffect(() => {
     if (!debouncedJsonInput || !debouncedJsonInput.trim()) {
       setParsedJson(null);
@@ -708,26 +701,20 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         setErrorMessage(getJsonParseError(debouncedJsonInput, e));
       }
     }
-  }, [debouncedJsonInput, activeTab]);
+  }, [debouncedJsonInput, activeTab, type]);
 
   // Debounce for Auto-Save (2 seconds)
   const debouncedSaveContent = useDebounce(jsonInput, 2000);
 
   // Auto-Save Effect
   useEffect(() => {
-    // Auto-save in Text or JSON Mode, if editable, and has slug
     if ((type === 'text' || type === 'json') && slug && canEdit && !isLocked) {
-
-      // Check if content actually changed from last save
       if (debouncedSaveContent === lastSavedContent.current) return;
-
-      // Prevent double calls or saving while already saving (though guard handles it)
       handleSave(true);
     }
-  }, [debouncedSaveContent]);
+  }, [debouncedSaveContent, type, slug, canEdit, isLocked]);
 
   const handleCopy = () => {
-    // Copy the formatted output, not the input, if we are in format tab
     if (activeTab === "formatter" && formattedOutput) {
       navigator.clipboard.writeText(formattedOutput);
     } else {
@@ -737,7 +724,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Computed Formatted Output
   const formattedOutput = React.useMemo(() => {
     if (!parsedJson) return "";
     if (tabSize === "minify") {
@@ -746,24 +732,19 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
     return JSON.stringify(parsedJson, null, Number(tabSize));
   }, [parsedJson, tabSize]);
 
-
-  // Mobile specific view state
   const [mobileTab, setMobileTab] = useState<"editor" | "viewer">("editor");
 
   return (
     <div className={cn("flex h-[100dvh] w-screen bg-gray-50 text-zinc-800 font-sans overflow-hidden", type !== 'text' && "dark:bg-zinc-950 dark:text-zinc-300 relative")}>
 
-      {/* Global Loading Overlay */}
       {isLoading && !isLocked && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center pointer-events-none">
           <Loader2 className="w-10 h-10 animate-spin text-emerald-600" />
         </div>
       )}
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Top Bar */}
         <header className={cn("h-14 border-b border-zinc-200 flex items-center justify-between px-2 lg:px-6 bg-white shrink-0", type !== 'text' && "dark:border-zinc-900 dark:bg-zinc-950")}>
           <div className="flex items-center gap-2 sm:gap-3">
             <a href={slug ? (type === 'text' ? `/share/text/${slug}` : `/share/${slug}`) : '/'} className="flex items-center hover:opacity-80 transition-opacity" title="Refresh Page">
@@ -778,8 +759,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-4">
-            {/* Upload Button */}
-            {/* Upload Button - Hidden in Text Mode */}
             {type !== 'text' && (
               <button
                 onClick={() => setIsUploadOpen(true)}
@@ -794,7 +773,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
               </button>
             )}
 
-            {/* New JSON */}
             <button
               onClick={() => handleNew('json')}
               className={cn(
@@ -807,7 +785,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
               <span className="hidden lg:inline">New JSON</span>
             </button>
 
-            {/* New Text */}
             <button
               onClick={() => handleNew('text')}
               className={cn(
@@ -820,8 +797,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
               <span className="hidden lg:inline">New Text</span>
             </button>
 
-            {/* Save Button */}
-            {/* Save Status Indicator (Auto-save) */}
             <div className={cn("flex items-center gap-2 px-3 text-xs font-medium text-zinc-500 select-none", type !== 'text' && "dark:text-zinc-400")}>
               {isSaving ? (
                 <span>Saving...</span>
@@ -842,7 +817,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
 
             <div className={cn("h-6 w-px bg-zinc-200 mx-0.5 sm:mx-1", type !== 'text' && "dark:bg-zinc-800")} />
 
-            {/* Header Icons: Github */}
             <a
               href="https://github.com/Softcolon-Technology/jsonrock"
               target="_blank"
@@ -859,18 +833,14 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
           </div>
         </header>
 
-        {/* Split View */}
         <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
 
-          {/* Editor Pane (Left/Top) */}
           <div
             style={{ "--left-panel-width": `${leftWidth}%` } as React.CSSProperties}
             className={cn(
               "border-b lg:border-b-0 lg:border-r border-zinc-200 flex flex-col bg-white h-full",
               type !== 'text' && "dark:border-zinc-900 dark:bg-[#09090b]",
               type === 'text' ? "w-full" : "w-full lg:w-[var(--left-panel-width)] lg:min-w-[300px]",
-              // Mobile visibility toggle
-              // Mobile visibility toggle
               mobileTab === 'editor' ? 'flex' : 'hidden lg:flex'
             )}>
             {type === 'text' ? (
@@ -888,16 +858,15 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
                 <div className="flex-1 relative">
                   <JsonEditor
                     className="pt-14 lg:pt-0"
-                    defaultValue={jsonInput} // Initial Load Only
-                    remoteValue={remoteCode} // Updates Only
+                    defaultValue={jsonInput}
+                    remoteValue={remoteCode}
                     onChange={handleJsonChange}
                     readOnly={!canEdit}
                     options={{
-                      padding: { top: 16, bottom: 100 } // Ensure last lines are visible above floating alert
+                      padding: { top: 16, bottom: 100 }
                     }}
                   />
 
-                  {/* Error Alert Overlay */}
                   {!isValid && errorMessage && (
                     <div className="absolute bottom-4 left-4 right-4 lg:bottom-6 lg:left-8 lg:right-8 z-30 animate-in fade-in slide-in-from-bottom-2">
                       <div className="bg-white/95 dark:bg-zinc-900/95 border border-red-200 dark:border-red-900/50 backdrop-blur-md p-3 lg:p-4 rounded-xl shadow-xl flex items-start gap-3 lg:gap-4 ring-1 ring-black/5 dark:ring-white/5">
@@ -923,7 +892,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
                     </div>
                   )}
 
-                  {/* Go to View Button (Mobile Only) */}
                   <div className="lg:hidden absolute top-2 right-14 z-20">
                     <button
                       onClick={() => setMobileTab("viewer")}
@@ -938,30 +906,21 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
             )}
           </div>
 
-
-          {/* Resizer Handle */}
           {type !== 'text' && (
             <div
               className={`hidden lg:flex w-1 bg-transparent cursor-col-resize z-40 items-center justify-center transition-colors`}
               onMouseDown={startResizing}
-            >
-              {/* Optional Grip Icon or dots */}
-            </div>
+            />
           )}
 
-          {/* View Pane (Right/Bottom) */}
           <div
             style={{ "--right-panel-width": `${100 - leftWidth}%` } as React.CSSProperties}
             className={cn(
               "bg-gray-50 dark:bg-[#050505] relative overflow-hidden h-full",
               "w-full lg:w-[var(--right-panel-width)]",
-              // Mobile visibility toggle
-              // Mobile visibility toggle
-              // Mobile visibility toggle
               mobileTab === 'viewer' ? 'flex flex-col' : (type === 'text' ? 'hidden' : 'hidden lg:flex lg:flex-col')
             )}>
 
-            {/* Back to Editor Button (Mobile Only) */}
             <div className="lg:hidden absolute top-2 right-10 z-[70]">
               <button
                 onClick={() => setMobileTab("editor")}
@@ -972,12 +931,7 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
               </button>
             </div>
 
-
-
-
-            {/* Navigation: Sidebar for Graph/Formatter/Tree */}
             <div className="absolute top-4 left-4 z-50 flex flex-col gap-3">
-              {/* Graph View Button */}
               <div className="relative group">
                 <button
                   onClick={() => setActiveTab("visualize")}
@@ -990,13 +944,11 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
                 >
                   <GitGraph size={18} />
                 </button>
-                {/* Tooltip */}
                 <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2 py-1 bg-zinc-900 dark:bg-zinc-800 text-white dark:text-zinc-200 text-xs font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-xl border border-zinc-800 dark:border-zinc-700">
                   Graph View
                 </div>
               </div>
 
-              {/* Tree View Button */}
               <div className="relative group">
                 <button
                   onClick={() => setActiveTab("tree")}
@@ -1013,7 +965,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
                 </div>
               </div>
 
-              {/* Formatter View Button */}
               <div className="relative group">
                 <button
                   onClick={() => setActiveTab("formatter")}
@@ -1086,7 +1037,8 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
             )}
           </div>
         </main>
-      </div >
+      </div>
+
       <ModalAlert
         isOpen={alertConfig.isOpen}
         onClose={closeAlert}
@@ -1096,153 +1048,147 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         forceLight={type === 'text'}
       />
 
-      {/* Upload Modal */}
-      {
-        isUploadOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                  <UploadCloud size={20} className="text-emerald-500" />
-                  Upload JSON File
-                </h3>
+      {isUploadOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <UploadCloud size={20} className="text-emerald-500" />
+                Upload JSON File
+              </h3>
+              <button
+                onClick={() => setIsUploadOpen(false)}
+                className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div
+                className="p-8 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-lg flex flex-col items-center justify-center text-center hover:border-emerald-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <UploadCloud size={32} className="text-zinc-400 mb-2" />
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  Click to select file
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  .json files only
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </div>
+
+              {isUploading && (
+                <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-500 animate-pulse">
+                  <span>Uploading and processing...</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => setIsUploadOpen(false)}
-                  className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                  disabled={isUploading}
                 >
-                  <X size={20} />
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLocked && (
+        <div className={cn(
+          "fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4",
+          type === 'text' ? "bg-white/80" : "bg-white/80 dark:bg-black/80"
+        )}>
+          <div className={cn(
+            "w-full max-w-md space-y-4 rounded-xl border p-6 shadow-2xl",
+            type === 'text' ? "bg-white border-zinc-200" : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800"
+          )}>
+            <div className="flex flex-col items-center gap-2 text-center">
+              <div className={cn(
+                "flex h-12 w-12 items-center justify-center rounded-full border",
+                type === 'text'
+                  ? "bg-zinc-100 border-zinc-200 text-zinc-500"
+                  : "bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400"
+              )}>
+                <Lock size={20} />
+              </div>
+              <h2 className={cn("text-lg font-semibold", type === 'text' ? "text-zinc-900" : "text-zinc-900 dark:text-zinc-100")}>Password Required</h2>
+              <p className={cn("text-sm", type === 'text' ? "text-zinc-500" : "text-zinc-500 dark:text-zinc-400")}>
+                This shared link is password protected. Please enter the password to view.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={cn(
+                    "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 pr-10",
+                    type === 'text'
+                      ? "bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-emerald-500"
+                      : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:border-emerald-500"
+                  )}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleUnlock();
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className={cn(
+                    "absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700 transition-colors",
+                    type !== 'text' && "dark:text-zinc-400 dark:hover:text-zinc-200"
+                  )}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
 
-              <div className="space-y-4">
-                <div
-                  className="p-8 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-lg flex flex-col items-center justify-center text-center hover:border-emerald-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors cursor-pointer"
-                  onClick={() => fileInputRef.current?.click()}
+              {unlockError && (
+                <div className="text-red-400 text-xs text-center border border-red-500/20 bg-red-500/10 p-2 rounded">
+                  {unlockError}
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleCancelUnlock}
+                  className={cn(
+                    "flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                    type === 'text'
+                      ? "bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"
+                      : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100"
+                  )}
                 >
-                  <UploadCloud size={32} className="text-zinc-400 mb-2" />
-                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                    Click to select file
-                  </p>
-                  <p className="text-xs text-zinc-500 mt-1">
-                    .json files only
-                  </p>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    onChange={handleFileUpload}
-                  />
-                </div>
-
-                {isUploading && (
-                  <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-500 animate-pulse">
-                    <span>Uploading and processing...</span>
-                  </div>
-                )}
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    onClick={() => setIsUploadOpen(false)}
-                    className="px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-                    disabled={isUploading}
-                  >
-                    Cancel
-                  </button>
-                </div>
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUnlock}
+                  disabled={unlockLoading || !password}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {unlockLoading ? "Verifying..." : "Unlock"}
+                  {!unlockLoading && <ArrowRight size={16} />}
+                </button>
               </div>
             </div>
           </div>
-        )
-      }
-
-      {/* Unlock Modal */}
-      {
-        isLocked && (
-          <div className={cn(
-            "fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4",
-            type === 'text' ? "bg-white/80" : "bg-white/80 dark:bg-black/80"
-          )}>
-            <div className={cn(
-              "w-full max-w-md space-y-4 rounded-xl border p-6 shadow-2xl",
-              type === 'text' ? "bg-white border-zinc-200" : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800"
-            )}>
-              <div className="flex flex-col items-center gap-2 text-center">
-                <div className={cn(
-                  "flex h-12 w-12 items-center justify-center rounded-full border",
-                  type === 'text'
-                    ? "bg-zinc-100 border-zinc-200 text-zinc-500"
-                    : "bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400"
-                )}>
-                  <Lock size={20} />
-                </div>
-                <h2 className={cn("text-lg font-semibold", type === 'text' ? "text-zinc-900" : "text-zinc-900 dark:text-zinc-100")}>Password Required</h2>
-                <p className={cn("text-sm", type === 'text' ? "text-zinc-500" : "text-zinc-500 dark:text-zinc-400")}>
-                  This shared link is password protected. Please enter the password to view.
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className={cn(
-                      "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 pr-10",
-                      type === 'text'
-                        ? "bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-emerald-500"
-                        : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:border-emerald-500"
-                    )}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleUnlock();
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className={cn(
-                      "absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700 transition-colors",
-                      type !== 'text' && "dark:text-zinc-400 dark:hover:text-zinc-200"
-                    )}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-
-                {unlockError && (
-                  <div className="text-red-400 text-xs text-center border border-red-500/20 bg-red-500/10 p-2 rounded">
-                    {unlockError}
-                  </div>
-                )}
-
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleCancelUnlock}
-                    className={cn(
-                      "flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
-                      type === 'text'
-                        ? "bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"
-                        : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100"
-                    )}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleUnlock}
-                    disabled={unlockLoading || !password}
-                    className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {unlockLoading ? "Verifying..." : "Unlock"}
-                    {!unlockLoading && <ArrowRight size={16} />}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      }
+        </div>
+      )}
 
       <SharePopover
         isOpen={isShareOpen}
@@ -1256,6 +1202,6 @@ export default function Home({ initialRecord, featureMode = "json" }: HomeProps)
         isLoading={isSaving}
         forceLight={type === 'text'}
       />
-    </div >
+    </div>
   );
 }
