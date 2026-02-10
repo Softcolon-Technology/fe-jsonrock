@@ -9,6 +9,7 @@ jobs:
     runs-on: jsonrock dev
     environment: development
     env:
+      NODE_OPTIONS: "--max-old-space-size=4096"  
       PORT: 3003
       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
       NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
