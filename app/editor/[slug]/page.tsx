@@ -1,5 +1,6 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import EditorPage from "@/app/editor-page";
+import EditorPage from "@/app/editor/editor-page";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -44,5 +45,9 @@ export default async function EditorSlugPage({ params }: Props) {
     redirect("/editor");
   }
 
-  return <EditorPage initialRecord={initialRecord} />;
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <EditorPage initialRecord={initialRecord} />
+    </Suspense>
+  );
 }

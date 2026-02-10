@@ -23,21 +23,21 @@ import { getJsonParseError } from "@/lib/json-error";
 
 import { getSocket } from "@/lib/socket";
 
-import { ModalAlert } from "./components/ui/ModalAlert";
-import { SharePopover } from "./components/SharePopover";
+import { ModalAlert } from "../components/ui/ModalAlert";
+import { SharePopover } from "../components/SharePopover";
 import Cookies from "js-cookie";
 
-import JsonEditor from "./components/JsonEditor";
-import GraphView from "./components/GraphView";
-import TreeExplorer from "./components/TreeExplorer";
+import JsonEditor from "../components/JsonEditor";
+import GraphView from "../components/GraphView";
+import TreeExplorer from "../components/TreeExplorer";
 import { getLayoutedElements } from "@/lib/graph-layout";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/useDebounce";
 import dynamic from "next/dynamic";
-import EditorHeader from "./components/editor/editor-header";
-import { ShareType } from "./iterface";
+import EditorHeader from "../components/editor/editor-header";
+import { ShareType } from "../iterface";
 
-const RichTextEditor = dynamic(() => import("./components/RichTextEditor"), {
+const RichTextEditor = dynamic(() => import("../components/RichTextEditor"), {
   ssr: false,
 });
 
