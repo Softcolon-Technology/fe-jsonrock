@@ -276,13 +276,20 @@ export default function Home({
     }
   }, [urlSlug, featureMode, syncFromData]);
 
+  // Sync currentViewMode with URL parameter changes (for browser back/forward navigation)
+  useEffect(() => {
+    if (paramView && paramView !== currentViewMode) {
+      setCurrentViewMode(paramView);
+    }
+  }, [paramView]);
+
   const addOwnership = (newSlug: string) => {
     const owned = Cookies.get("json-cracker-owned");
     let slugs: string[] = [];
     if (owned) {
       try {
         slugs = JSON.parse(owned);
-      } catch (e) {}
+      } catch (e) { }
     }
     if (!slugs.includes(newSlug)) {
       slugs.push(newSlug);
@@ -445,7 +452,7 @@ export default function Home({
             setIsCurrentUserOwner(true);
             setHasEditPermission(true);
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       setIsPrivacyLocked(data.isPrivate);
@@ -482,6 +489,11 @@ export default function Home({
       nonce: Date.now(),
     });
 
+    // Set view mode to formatter for JSON documents
+    if (!isText) {
+      setCurrentViewMode("formatter");
+    }
+
     // Create initial record
     setIsAutoSaving(true);
     try {
@@ -490,7 +502,7 @@ export default function Home({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           json: initialContent,
-          mode: currentViewMode,
+          mode: isText ? currentViewMode : "formatter", // Use formatter for new JSON
           type: targetType,
           accessType: "editor",
         }),
@@ -505,7 +517,9 @@ export default function Home({
         addOwnership(data.slug);
         const route =
           (data.type || targetType) === "text" ? "/editor/text/" : "/editor/";
-        router.push(`${route}${data.slug}`);
+        // Add default view parameter for proper navigation
+        const viewParam = targetType === "text" ? "" : "?view=formatter";
+        router.push(`${route}${data.slug}${viewParam}`);
       }
     } catch (e) {
       console.error("Failed to create new record", e);
@@ -655,8 +669,9 @@ export default function Home({
       }
 
       // Success - Redirect
+      setCurrentViewMode("formatter"); // Set view mode to match URL parameter
       addOwnership(data.slug);
-      router.push(`/editor/${data.slug}`);
+      router.push(`/editor/${data.slug}?view=formatter`);
     } catch (error) {
       console.error(error);
       triggerAlert("Upload Failed", (error as Error).message, "error");
@@ -712,7 +727,8 @@ export default function Home({
         setDocumentSlug(newSlug);
         addOwnership(newSlug); // Mark as owner of new/updated slug
         const route = documentType === "text" ? "/editor/text/" : "/editor/";
-        router.push(`${route}${newSlug}`);
+        const viewParam = documentType === "text" ? "" : "?view=formatter";
+        router.push(`${route}${newSlug}${viewParam}`);
       }
 
       // Update local state
@@ -834,7 +850,7 @@ export default function Home({
       className={cn(
         "flex h-[100dvh] w-screen bg-gray-50 text-zinc-800 font-sans overflow-hidden",
         documentType !== "text" &&
-          "dark:bg-zinc-950 dark:text-zinc-300 relative",
+        "dark:bg-zinc-950 dark:text-zinc-300 relative",
       )}
     >
       {/* Global Loading Overlay */}
@@ -869,7 +885,7 @@ export default function Home({
             className={cn(
               "border-b lg:border-b-0 lg:border-r border-zinc-200 flex flex-col bg-white h-full",
               documentType !== "text" &&
-                "dark:border-zinc-900 dark:bg-[#09090b]",
+              "dark:border-zinc-900 dark:bg-[#09090b]",
               documentType === "text"
                 ? "w-full"
                 : "w-full lg:w-[var(--left-panel-width)] lg:min-w-[300px]",
@@ -1138,7 +1154,7 @@ export default function Home({
                     <JsonEditor
                       defaultValue={formattedOutput}
                       remoteValue={{ code: formattedOutput, nonce: 0 }}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       readOnly={true}
                       className="rounded-none border-0 shadow-none"
                     />
@@ -1289,7 +1305,7 @@ export default function Home({
                   className={cn(
                     "absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700 transition-colors",
                     documentType !== "text" &&
-                      "dark:text-zinc-400 dark:hover:text-zinc-200",
+                    "dark:text-zinc-400 dark:hover:text-zinc-200",
                   )}
                 >
                   {isPasswordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
