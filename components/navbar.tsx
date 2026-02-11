@@ -95,7 +95,8 @@ export default function Navbar() {
               key={link.label}
               href={link.href}
               onClick={(e) => handleSmoothScroll(e, link.href)}
-              className="text-sm font-semibold text-zinc-800 dark:text-zinc-300 hover:text-cyan-500 dark:hover:text-cyan-400 transition-colors cursor-pointer"
+              style={{ color: '#27272a' }} // Ensure dark color is always applied
+              className="text-sm font-semibold hover:text-cyan-500 dark:hover:text-cyan-400 transition-colors cursor-pointer"
             >
               {link.label}
             </a>
