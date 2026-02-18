@@ -52,8 +52,8 @@ const JsonNode = ({ data, selected }: NodeProps<GraphNodeData>) => {
             {/* Body */}
             <div className="p-2 space-y-1">
                 {data.properties?.map((prop, idx) => (
-                    <div key={idx} className="flex items-start gap-3 px-1 hover:bg-zinc-100 dark:hover:bg-zinc-900/50 rounded py-0.5 transition-colors">
-                        <span className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400 shrink-0 mt-0.5">
+                    <div key={idx} className="grid grid-cols-[auto_1fr] gap-2 px-1 hover:bg-zinc-100 dark:hover:bg-zinc-900/50 rounded py-0.5 transition-colors items-baseline">
+                        <span className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
                             {prop.key}:
                         </span>
                         <span
@@ -80,7 +80,7 @@ const JsonNode = ({ data, selected }: NodeProps<GraphNodeData>) => {
 
                 {(!data.properties || data.properties.length === 0) && !data.value && (
                     <div className="px-1 py-1 text-[10px] text-zinc-400 dark:text-zinc-600 italic">
-                        {data.type === 'object' ? '{} empty object' : data.type === 'array' ? '[] empty array' : ''}
+                        {data.type === 'object' ? '{} empty object' : data.type === 'array' && data.childrenCount === 0 ? '[] empty array' : ''}
                     </div>
                 )}
             </div>

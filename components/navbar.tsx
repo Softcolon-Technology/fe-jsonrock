@@ -9,6 +9,23 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
+  // Smooth scroll handler
+  const handleSmoothScroll = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    e.preventDefault();
+    const targetId = href.replace('#', '');
+    const element = document.getElementById(targetId);
+
+    if (element) {
+      element.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }
+
+    // Close mobile menu if open
+    setIsOpen(false);
+  };
+
   // Lock body scroll when menu is open
   useEffect(() => {
     if (isOpen) {
@@ -77,7 +94,9 @@ export default function Navbar() {
             <a
               key={link.label}
               href={link.href}
-              className="text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-cyan-500 dark:hover:text-cyan-400 transition-colors"
+              onClick={(e) => handleSmoothScroll(e, link.href)}
+              style={{ color: '#27272a' }} // Ensure dark color is always applied
+              className="text-sm font-semibold hover:text-cyan-500 dark:hover:text-cyan-400 transition-colors cursor-pointer"
             >
               {link.label}
             </a>
@@ -106,18 +125,16 @@ export default function Navbar() {
 
       {/* Mobile Sidebar Overlay */}
       <div
-        className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[55] md:hidden transition-opacity duration-300 ${
-          isOpen ? "opacity-100 visible" : "opacity-0 invisible"
-        }`}
+        className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[55] md:hidden transition-opacity duration-300 ${isOpen ? "opacity-100 visible" : "opacity-0 invisible"
+          }`}
         onClick={() => setIsOpen(false)}
       />
 
       {/* Mobile Sidebar */}
       <div
         ref={sidebarRef}
-        className={`fixed top-0 left-0 h-[100dvh] w-[280px] bg-white shadow-2xl z-[60] md:hidden transform transition-transform duration-300 ease-in-out flex flex-col ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed top-0 left-0 h-[100dvh] w-[280px] bg-white shadow-2xl z-[60] md:hidden transform transition-transform duration-300 ease-in-out flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         {/* Sidebar Header */}
         <div className="bg-gradient-to-br from-[#00B3B7] to-cyan-500 p-6 flex items-center justify-between shrink-0">
@@ -139,8 +156,8 @@ export default function Navbar() {
               <a
                 key={link.label}
                 href={link.href}
-                onClick={() => setIsOpen(false)}
-                className="flex items-center gap-4 px-6 py-4 text-zinc-700 hover:bg-gradient-to-r hover:from-[#00B3B7]/10 hover:to-cyan-500/10 hover:text-[#00B3B7] transition-all duration-200 group border-b border-zinc-100 last:border-0"
+                onClick={(e) => handleSmoothScroll(e, link.href)}
+                className="flex items-center gap-4 px-6 py-4 text-zinc-700 hover:bg-gradient-to-r hover:from-[#00B3B7]/10 hover:to-cyan-500/10 hover:text-[#00B3B7] transition-all duration-200 group border-b border-zinc-100 last:border-0 cursor-pointer"
                 style={{ animationDelay: `${index * 50}ms` }}
               >
                 <Icon className="text-2xl group-hover:scale-110 transition-transform duration-200" />
