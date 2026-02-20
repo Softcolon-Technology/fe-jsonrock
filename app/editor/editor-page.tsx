@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Edge, Node } from "reactflow";
 import {
@@ -17,9 +17,10 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  AlertTriangle,
 } from "lucide-react";
 
-import { getJsonParseError } from "@/lib/json-error";
+import { useJsonWorker } from "@/hooks/useJsonWorker";
 
 import { getSocket } from "@/lib/socket";
 
@@ -28,6 +29,7 @@ import { SharePopover } from "../components/SharePopover";
 import Cookies from "js-cookie";
 
 import JsonEditor from "../components/JsonEditor";
+import VirtualizedCodeViewer from "../components/VirtualizedCodeViewer";
 import GraphView from "../components/GraphView";
 import TreeExplorer from "../components/TreeExplorer";
 import { getLayoutedElements } from "@/lib/graph-layout";
@@ -40,6 +42,49 @@ import { ShareType } from "../iterface";
 const RichTextEditor = dynamic(() => import("../components/RichTextEditor"), {
   ssr: false,
 });
+
+/** Max keys for graph view — ELK layout chokes beyond this */
+const MAX_GRAPH_KEYS = 2_000;
+
+/** Default content for new JSON documents */
+const DEFAULT_JSON_CONTENT = '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
+
+/** Default content for new text documents */
+const DEFAULT_TEXT_CONTENT = '<p style="font-size: 14pt">Type your text here...</p>';
+
+/** Get default content based on document type */
+const getDefaultContent = (type: string) =>
+  type === "text" ? DEFAULT_TEXT_CONTENT : DEFAULT_JSON_CONTENT;
+
+/**
+ * Reconstruct a plain JS object from the worker's TreeNodeSlim.
+ * This is only used for the graph layout engine which needs a raw object.
+ * The tree is already size-limited by the worker (MAX_TREE_NODES).
+ */
+function reconstructFromSlimTree(node: import("@/workers/json-format.worker").TreeNodeSlim): unknown {
+  switch (node.type) {
+    case "null":
+      return null;
+    case "string":
+    case "number":
+    case "boolean":
+      return node.value;
+    case "array": {
+      if (!node.children) return [];
+      return node.children.map((child) => reconstructFromSlimTree(child));
+    }
+    case "object": {
+      if (!node.children) return {};
+      const obj: Record<string, unknown> = {};
+      for (const child of node.children) {
+        obj[child.key] = reconstructFromSlimTree(child);
+      }
+      return obj;
+    }
+    default:
+      return null;
+  }
+}
 
 export type JsonShareMode = "visualize" | "tree" | "formatter";
 
@@ -87,18 +132,15 @@ export default function Home({
   const effectiveViewMode = initialRecord?.mode || paramView || "visualize";
 
   const [currentJsonContent, setCurrentJsonContent] = useState<string>(
-    initialRecord
-      ? initialRecord.json
-      : effectiveFeatureMode === "text"
-        ? '<p style="font-size: 14pt">Type your text here...</p>'
-        : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}',
+    initialRecord ? initialRecord.json : getDefaultContent(effectiveFeatureMode),
   );
 
   const lastPersistedContentRef = React.useRef<string>(
     initialRecord?.json || currentJsonContent,
   );
 
-  const [parsedJsonData, setParsedJsonData] = useState<any>(null);
+  // NOTE: We no longer hold parsedJsonData (full JS object) in state.
+  // Tree/graph views use the worker's slim tree data instead.
   const [graphNodes, setGraphNodes] = useState<Node[]>([]);
   const [graphEdges, setGraphEdges] = useState<Edge[]>([]);
   const [currentViewMode, setCurrentViewMode] = useState<
@@ -169,8 +211,6 @@ export default function Home({
     return initialRecord.accessType === "editor"; // Non-owner: check accessType
   });
 
-  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
-  // Check ownership on load & Sync state when initialRecord changes (e.g. on navigation)
   // Sync state when URL slug changes (Navigation / Refresh)
 
   const syncFromData = useCallback(
@@ -254,10 +294,7 @@ export default function Home({
       return () => controller.abort();
     } else {
       // NAVIGATED TO ROOT (New File)
-      const defaultContent =
-        featureMode === "text"
-          ? '<p style="font-size: 14pt">Type your text here...</p>'
-          : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
+      const defaultContent = getDefaultContent(featureMode);
 
       if (documentSlug !== null) {
         setCurrentJsonContent(defaultContent);
@@ -268,7 +305,6 @@ export default function Home({
         setCurrentViewMode("visualize");
         setIsCurrentUserOwner(true);
         setHasEditPermission(true);
-        setParsedJsonData(null);
         setSyncedRemoteContent({ code: defaultContent, nonce: Date.now() });
         lastPersistedContentRef.current = defaultContent;
       }
@@ -320,15 +356,11 @@ export default function Home({
   // Refs for stable callback access
   const slugRef = React.useRef(documentSlug);
   const isLockedRef = React.useRef(isPasswordLocked);
-  const isPrivateRef = React.useRef(isDocumentPrivate);
-  const isValidRef = React.useRef(isJsonValid);
 
   useEffect(() => {
     slugRef.current = documentSlug;
     isLockedRef.current = isPasswordLocked;
-    isPrivateRef.current = isDocumentPrivate;
-    isValidRef.current = isJsonValid;
-  }, [documentSlug, isPasswordLocked, isDocumentPrivate, isJsonValid]);
+  }, [documentSlug, isPasswordLocked]);
 
   const emitTimeout = React.useRef<NodeJS.Timeout | null>(null);
 
@@ -372,19 +404,15 @@ export default function Home({
       lastPersistedContentRef.current = newCode;
     };
 
-    // CRITICAL FIX: Only connect if not already connected
-    // This prevents reconnection churn when slug changes
+    // Only connect if not already connected to prevent reconnection churn
     if (!socket.connected) {
       socket.connect();
-    } else {
-      // Already connected, just join the new room
-      onConnect();
     }
 
     socket.on("connect", onConnect);
     socket.on("code-change", onCodeChange);
 
-    // Handle immediate connection case
+    // If already connected, join the room immediately
     if (socket.connected) {
       onConnect();
     }
@@ -444,15 +472,9 @@ export default function Home({
       syncFromData(data);
 
       // Check if I am actually the owner (maybe I created it on this device?)
-      const ownedSlugs = Cookies.get("json-cracker-owned");
-      if (ownedSlugs) {
-        try {
-          const parsed = JSON.parse(ownedSlugs);
-          if (Array.isArray(parsed) && parsed.includes(initialRecord.slug)) {
-            setIsCurrentUserOwner(true);
-            setHasEditPermission(true);
-          }
-        } catch (e) { }
+      if (checkOwnership(initialRecord.slug)) {
+        setIsCurrentUserOwner(true);
+        setHasEditPermission(true);
       }
 
       setIsPrivacyLocked(data.isPrivate);
@@ -473,9 +495,7 @@ export default function Home({
     const targetType =
       typeof specificType === "string" ? specificType : documentType;
     const isText = targetType === "text";
-    const initialContent = isText
-      ? '<p style="font-size: 14pt">Type your text here...</p>'
-      : '{\n  "project": "JSON Cracker",\n  "visualize": true,\n  "features": [\n    "Graph View",\n    "Tree View",\n    "Formatter"\n  ],\n  "metrics": {\n    "speed": 100,\n    "usability": "high"\n  }\n}';
+    const initialContent = getDefaultContent(targetType);
 
     setCurrentJsonContent(initialContent);
     setDocumentSlug(null);
@@ -761,45 +781,94 @@ export default function Home({
   // Debounce the input for Layout calculations (500ms)
   const debouncedJsonContent = useDebounce(currentJsonContent, 500);
 
-  // Layout Effect - Depends on debounced input
+  // Web Worker for JSON parsing + formatting
+  const { formatResult, treeResult, requestFormat, requestTreeData } = useJsonWorker();
+
+  // Track whether tree data has been requested for the current content
+  const treeContentRef = useRef<string>("");
+
+  // Send content to worker for formatting when debounced content or indent changes
   useEffect(() => {
     if (!debouncedJsonContent || !debouncedJsonContent.trim()) {
-      setParsedJsonData(null);
       setIsJsonValid(true);
       setGraphNodes([]);
       setGraphEdges([]);
       setJsonValidationError(null);
+      treeContentRef.current = "";
       return;
     }
 
-    try {
-      if (documentType === "text") {
-        setIsJsonValid(true);
-        setJsonValidationError(null);
-        return;
-      }
-      const parsed = JSON.parse(debouncedJsonContent);
-      setParsedJsonData(parsed);
+    if (documentType === "text") {
       setIsJsonValid(true);
       setJsonValidationError(null);
-
-      if (currentViewMode === "visualize") {
-        setIsLayoutCalculating(true);
-        getLayoutedElements(parsed).then(
-          ({ nodes: layoutedNodes, edges: layoutedEdges }) => {
-            setGraphNodes(layoutedNodes);
-            setGraphEdges(layoutedEdges);
-            setIsLayoutCalculating(false);
-          },
-        );
-      }
-    } catch (e) {
-      setIsJsonValid(false);
-      if (e instanceof SyntaxError) {
-        setJsonValidationError(getJsonParseError(debouncedJsonContent, e));
-      }
+      return;
     }
-  }, [debouncedJsonContent, currentViewMode]);
+
+    // Always request formatting (lightweight — worker handles it)
+    requestFormat(debouncedJsonContent, indentationSize);
+
+    // Lazily request tree/graph data only if user is on a view that needs it
+    if (currentViewMode === "visualize" || currentViewMode === "tree") {
+      treeContentRef.current = debouncedJsonContent;
+      requestTreeData(debouncedJsonContent);
+    }
+  }, [debouncedJsonContent, indentationSize, documentType, requestFormat, requestTreeData, currentViewMode]);
+
+  // When user switches to tree/graph view, request tree data if stale
+  useEffect(() => {
+    if (
+      (currentViewMode === "visualize" || currentViewMode === "tree") &&
+      debouncedJsonContent &&
+      treeContentRef.current !== debouncedJsonContent &&
+      documentType !== "text"
+    ) {
+      treeContentRef.current = debouncedJsonContent;
+      requestTreeData(debouncedJsonContent);
+    }
+  }, [currentViewMode, debouncedJsonContent, documentType, requestTreeData]);
+
+  // React to format results
+  useEffect(() => {
+    if (formatResult.isProcessing) return;
+
+    if (formatResult.isValid) {
+      setIsJsonValid(true);
+      setJsonValidationError(null);
+    } else if (formatResult.error) {
+      setIsJsonValid(false);
+      setJsonValidationError(formatResult.error);
+    }
+  }, [formatResult]);
+
+  // React to tree results — build graph layout when in visualize mode
+  useEffect(() => {
+    if (treeResult.isProcessing) return;
+    if (!treeResult.treeData) return;
+
+    if (currentViewMode === "visualize") {
+      // Guard: Don't build graph for huge data
+      if (treeResult.totalKeys > MAX_GRAPH_KEYS) {
+        setGraphNodes([]);
+        setGraphEdges([]);
+        return;
+      }
+
+      // Reconstruct a minimal JS object from treeData for the layout engine
+      const reconstructed = reconstructFromSlimTree(treeResult.treeData);
+      setIsLayoutCalculating(true);
+      getLayoutedElements(reconstructed).then(
+        ({ nodes: layoutedNodes, edges: layoutedEdges }) => {
+          setGraphNodes(layoutedNodes);
+          setGraphEdges(layoutedEdges);
+          setIsLayoutCalculating(false);
+        },
+      );
+    }
+  }, [treeResult, currentViewMode]);
+
+  // Formatted lines come directly from the worker (pre-split)
+  const formattedLines = formatResult.lines;
+  const hasFormattedOutput = formatResult.lines.length > 0;
 
   // Debounce for Auto-Save (2 seconds)
   const debouncedContentForAutoSave = useDebounce(currentJsonContent, 2000);
@@ -824,23 +893,16 @@ export default function Home({
 
   const handleCopy = () => {
     // Copy the formatted output, not the input, if we are in format tab
-    if (currentViewMode === "formatter" && formattedOutput) {
-      navigator.clipboard.writeText(formattedOutput);
+    if (currentViewMode === "formatter" && hasFormattedOutput) {
+      // Join lines back for clipboard. For very large files, this is a one-time cost.
+      const text = formattedLines.join("\n");
+      navigator.clipboard.writeText(text);
     } else {
       navigator.clipboard.writeText(currentJsonContent);
     }
     setIsClipboardCopied(true);
     setTimeout(() => setIsClipboardCopied(false), 2000);
   };
-
-  // Computed Formatted Output
-  const formattedOutput = React.useMemo(() => {
-    if (!parsedJsonData) return "";
-    if (indentationSize === "minify") {
-      return JSON.stringify(parsedJsonData);
-    }
-    return JSON.stringify(parsedJsonData, null, Number(indentationSize));
-  }, [parsedJsonData, indentationSize]);
 
   // Mobile specific view state
   const [mobileTab, setMobileTab] = useState<"editor" | "viewer">("editor");
@@ -889,8 +951,6 @@ export default function Home({
               documentType === "text"
                 ? "w-full"
                 : "w-full lg:w-[var(--left-panel-width)] lg:min-w-[300px]",
-              // Mobile visibility toggle
-              // Mobile visibility toggle
               mobileTab === "editor" ? "flex" : "hidden lg:flex",
             )}
           >
@@ -979,9 +1039,6 @@ export default function Home({
             className={cn(
               "bg-gray-50 dark:bg-[#050505] relative overflow-hidden h-full",
               "w-full lg:w-[var(--right-panel-width)]",
-              // Mobile visibility toggle
-              // Mobile visibility toggle
-              // Mobile visibility toggle
               mobileTab === "viewer"
                 ? "flex flex-col"
                 : documentType === "text"
@@ -1072,7 +1129,7 @@ export default function Home({
                 </div>
               </div>
             </div>
-            {isJsonValid && !parsedJsonData ? (
+            {isJsonValid && !hasFormattedOutput && !treeResult.treeData ? (
               <div className="h-full w-full flex flex-col items-center justify-center pl-16 animate-in fade-in zoom-in-95 duration-200">
                 <div className="mb-4 p-4 rounded-full bg-zinc-200 dark:bg-zinc-800/50">
                   <Code2 size={48} className="opacity-50 text-zinc-400" />
@@ -1086,80 +1143,80 @@ export default function Home({
               </div>
             ) : (
               <>
-                <div
-                  className={cn(
-                    "h-full w-full",
-                    currentViewMode !== "visualize" && "hidden",
-                  )}
-                >
-                  {isLayoutCalculating ? (
-                    <div className="flex h-full items-center justify-center text-zinc-500 gap-2">
-                      <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
-                      Layouting...
-                    </div>
-                  ) : (
-                    <GraphView nodes={graphNodes} edges={graphEdges} />
-                  )}
-                </div>
+                {currentViewMode === "visualize" && (
+                  <div className="h-full w-full">
+                    {treeResult.totalKeys > MAX_GRAPH_KEYS ? (
+                      <div className="flex h-full flex-col items-center justify-center text-zinc-500 gap-3 pl-16">
+                        <div className="p-3 rounded-full bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                          <AlertTriangle size={28} className="text-amber-500" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-zinc-700 dark:text-zinc-200">
+                          File Too Large for Graph View
+                        </h3>
+                        <p className="max-w-sm text-center text-sm text-zinc-500">
+                          This JSON has {treeResult.totalKeys.toLocaleString()} keys which exceeds the graph view limit ({MAX_GRAPH_KEYS.toLocaleString()} keys).
+                          Use the <strong>Tree Explorer</strong> or <strong>Formatter</strong> view instead.
+                        </p>
+                      </div>
+                    ) : isLayoutCalculating ? (
+                      <div className="flex h-full items-center justify-center text-zinc-500 gap-2">
+                        <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
+                        Layouting...
+                      </div>
+                    ) : (
+                      <GraphView nodes={graphNodes} edges={graphEdges} />
+                    )}
+                  </div>
+                )}
 
-                <div
-                  className={cn(
-                    "h-full w-full overflow-hidden pl-16",
-                    currentViewMode !== "tree" && "hidden",
-                  )}
-                >
-                  <TreeExplorer data={parsedJsonData} />
-                </div>
+                {currentViewMode === "tree" && (
+                  <div className="h-full w-full overflow-hidden pl-16">
+                    <TreeExplorer data={treeResult.treeData} />
+                  </div>
+                )}
 
-                <div
-                  className={cn(
-                    "h-full w-full flex flex-col",
-                    currentViewMode !== "formatter" && "hidden",
-                  )}
-                >
-                  <div className="flex items-center justify-between pl-4 pr-4 py-1 bg-gradient-to-b from-gray-50 to-gray-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 h-11 shrink-0 ml-16">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
-                        JSON Formatter
-                      </span>
-                      <select
-                        value={indentationSize}
-                        onChange={(e) => setIndentationSize(e.target.value)}
-                        className="bg-zinc-100 dark:bg-zinc-800 border-none text-zinc-900 dark:text-zinc-300 text-xs rounded px-2 py-1 focus:ring-1 focus:ring-emerald-500/50 outline-none cursor-pointer"
+                {currentViewMode === "formatter" && (
+                  <div className="h-full w-full flex flex-col">
+                    <div className="flex items-center justify-between pl-4 pr-4 py-1 bg-gradient-to-b from-gray-50 to-gray-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 h-11 shrink-0 ml-16">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+                          JSON Formatter
+                        </span>
+                        <select
+                          value={indentationSize}
+                          onChange={(e) => setIndentationSize(e.target.value)}
+                          className="bg-zinc-100 dark:bg-zinc-800 border-none text-zinc-900 dark:text-zinc-300 text-xs rounded px-2 py-1 focus:ring-1 focus:ring-emerald-500/50 outline-none cursor-pointer"
+                        >
+                          <option value="2">2 Tabs</option>
+                          <option value="3">3 Tabs</option>
+                          <option value="4">4 Tabs</option>
+                          <option value="minify">Minify</option>
+                        </select>
+                      </div>
+                      <button
+                        onClick={handleCopy}
+                        className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors group relative"
                       >
-                        <option value="2">2 Tabs</option>
-                        <option value="3">3 Tabs</option>
-                        <option value="4">4 Tabs</option>
-                        <option value="minify">Minify</option>
-                      </select>
+                        {isClipboardCopied ? (
+                          <Check size={14} className="text-emerald-500" />
+                        ) : (
+                          <Copy
+                            size={14}
+                            className="text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-zinc-200"
+                          />
+                        )}
+                        <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+                          Copy Output
+                        </span>
+                      </button>
                     </div>
-                    <button
-                      onClick={handleCopy}
-                      className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors group relative"
-                    >
-                      {isClipboardCopied ? (
-                        <Check size={14} className="text-emerald-500" />
-                      ) : (
-                        <Copy
-                          size={14}
-                          className="text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-zinc-200"
-                        />
-                      )}
-                      <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
-                        Copy Output
-                      </span>
-                    </button>
+                    <div className="flex-1 ml-16">
+                      <VirtualizedCodeViewer
+                        lines={formattedLines}
+                      />
+                    </div>
                   </div>
-                  <div className="flex-1 ml-16">
-                    <JsonEditor
-                      defaultValue={formattedOutput}
-                      remoteValue={{ code: formattedOutput, nonce: 0 }}
-                      onChange={() => { }}
-                      readOnly={true}
-                      className="rounded-none border-0 shadow-none"
-                    />
-                  </div>
-                </div>
+                )}
               </>
             )}
           </div>
