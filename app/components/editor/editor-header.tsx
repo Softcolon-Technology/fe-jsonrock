@@ -1,6 +1,6 @@
 import { ShareType } from "@/app/iterface";
 import { cn } from "@/lib/utils";
-import { Braces, File, LinkIcon, UploadCloud } from "lucide-react";
+import { Braces, File, Home, LinkIcon, UploadCloud } from "lucide-react";
 import { ThemeToggle } from "../button/theme-toggle";
 import HeaderLogo from "./header/header-logo";
 import SaveStatus from "./header/save-status";
@@ -13,6 +13,7 @@ interface Props {
   documentSlug: string | null;
   isJsonValid: boolean;
   isAutoSaving: boolean;
+  currentViewMode: string;
   onCreateNewDocument: (x: ShareType) => void;
   onOpenShareModal: (x: boolean) => void;
   onOpenUploadModal: (x: boolean) => void;
@@ -26,6 +27,7 @@ const EditorHeader = ({
   onCreateNewDocument,
   isAutoSaving,
   onOpenShareModal,
+  currentViewMode,
 }: Props) => {
   return (
     <header
@@ -40,6 +42,7 @@ const EditorHeader = ({
           type={documentType}
           slug={documentSlug}
           isValid={isJsonValid}
+          viewMode={currentViewMode}
         />
       </div>
 
@@ -148,6 +151,20 @@ const EditorHeader = ({
           aria-label="View Source on GitHub"
         >
           <FaGithub size={18} />
+        </Link>
+
+        {/* Home */}
+        <Link
+          href="/"
+          className={cn(
+            "p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-all flex items-center justify-center focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none",
+            documentType !== "text" &&
+            "dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800",
+          )}
+          title="Go to Home"
+          aria-label="Go to Home"
+        >
+          <Home size={18} />
         </Link>
       </div>
     </header>

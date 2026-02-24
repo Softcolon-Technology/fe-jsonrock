@@ -83,8 +83,9 @@ export default function Home({
   const paramType = searchParams?.get("type") as ShareType | undefined;
 
   // Determine effective initial values
+  // paramView (URL param) takes priority over DB stored mode — URL represents explicit user intent
   const effectiveFeatureMode = initialRecord?.type || paramType || featureMode;
-  const effectiveViewMode = initialRecord?.mode || paramView || "visualize";
+  const effectiveViewMode = paramView || initialRecord?.mode || "visualize";
 
   const [currentJsonContent, setCurrentJsonContent] = useState<string>(
     initialRecord
@@ -99,6 +100,7 @@ export default function Home({
   );
 
   const [parsedJsonData, setParsedJsonData] = useState<any>(null);
+  const [isEditorReady, setIsEditorReady] = useState(false);
   const [graphNodes, setGraphNodes] = useState<Node[]>([]);
   const [graphEdges, setGraphEdges] = useState<Edge[]>([]);
   const [currentViewMode, setCurrentViewMode] = useState<
@@ -110,7 +112,7 @@ export default function Home({
 
   const [isJsonValid, setIsJsonValid] = useState<boolean>(true);
   const [isLayoutCalculating, setIsLayoutCalculating] =
-    useState<boolean>(false);
+    useState<boolean>(effectiveViewMode === "visualize");
   const [isClipboardCopied, setIsClipboardCopied] = useState<boolean>(false);
   const [jsonValidationError, setJsonValidationError] = useState<{
     message: string;
@@ -189,7 +191,8 @@ export default function Home({
       setIsDocumentPrivate(data.isPrivate || false);
       setUserAccessLevel(data.accessType || "viewer");
       setDocumentType(data.type || "json");
-      setCurrentViewMode(data.mode || "visualize");
+      // URL param (?view=) takes priority over DB stored mode — it's the explicit user intent
+      setCurrentViewMode(paramView || data.mode || "visualize");
       setSyncedRemoteContent({ code: content, nonce: Date.now() });
 
       // Handle Locking
@@ -223,10 +226,20 @@ export default function Home({
     [checkOwnership],
   );
 
+  // Track whether this is the first mount — SSR already provided initialRecord, no need to re-fetch
+  const isInitialMountRef = React.useRef(!!initialRecord);
+
   // Sync state when URL slug changes (Navigation / Refresh)
   useEffect(() => {
     if (urlSlug) {
-      // ALWAYS Fetch from API on navigation/load
+      // On the very first mount, SSR already hydrated state from initialRecord — skip the fetch
+      if (isInitialMountRef.current) {
+        isInitialMountRef.current = false;
+        setIsPageLoading(false);
+        return;
+      }
+
+      // Subsequent navigations: fetch fresh data
       setIsPageLoading(true);
       const controller = new AbortController();
 
@@ -254,6 +267,7 @@ export default function Home({
       return () => controller.abort();
     } else {
       // NAVIGATED TO ROOT (New File)
+      isInitialMountRef.current = false;
       const defaultContent =
         featureMode === "text"
           ? '<p style="font-size: 14pt">Type your text here...</p>'
@@ -822,6 +836,53 @@ export default function Home({
     }
   }, [debouncedContentForAutoSave]);
 
+  // Auto-Create Effect: When no slug exists and user edits default content, auto-create a document
+  const isAutoCreatingRef = React.useRef(false);
+  useEffect(() => {
+    // Only trigger if: no slug, content differs from default, not empty, not already creating
+    if (
+      !documentSlug &&
+      debouncedContentForAutoSave !== lastPersistedContentRef.current &&
+      debouncedContentForAutoSave.trim() &&
+      !isAutoCreatingRef.current
+    ) {
+      isAutoCreatingRef.current = true;
+      const targetType = documentType;
+      const isText = targetType === "text";
+      fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          json: debouncedContentForAutoSave,
+          mode: currentViewMode, // Save the actual current view mode, not forced "formatter"
+          type: targetType,
+          accessType: "editor",
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.slug) {
+            setDocumentSlug(data.slug);
+            setUserAccessLevel(data.accessType || "editor");
+            setHasEditPermission(true);
+            setIsCurrentUserOwner(true);
+            setDocumentType(data.type || targetType);
+            addOwnership(data.slug);
+            lastPersistedContentRef.current = debouncedContentForAutoSave;
+            // Use the current view mode the user is already in (don't force a switch)
+            const route = isText ? "/editor/text/" : "/editor/";
+            const viewParam = isText ? "" : `?view=${currentViewMode}`;
+            // Use replace instead of push for smooth navigation (no hard refresh feel)
+            router.replace(`${route}${data.slug}${viewParam}`);
+          }
+        })
+        .catch((e) => console.error("Auto-create failed", e))
+        .finally(() => {
+          isAutoCreatingRef.current = false;
+        });
+    }
+  }, [debouncedContentForAutoSave]);
+
   const handleCopy = () => {
     // Copy the formatted output, not the input, if we are in format tab
     if (currentViewMode === "formatter" && formattedOutput) {
@@ -871,6 +932,7 @@ export default function Home({
           onCreateNewDocument={handleCreateNewDocument}
           isAutoSaving={isAutoSaving}
           onOpenShareModal={setIsShareModalOpen}
+          currentViewMode={currentViewMode}
         />
 
         {/* Split View */}
@@ -912,6 +974,7 @@ export default function Home({
                     defaultValue={currentJsonContent} // Initial Load Only
                     remoteValue={syncedRemoteContent} // Updates Only
                     onChange={onJsonContentChange}
+                    onReady={() => setIsEditorReady(true)}
                     readOnly={!hasEditPermission}
                     options={{
                       padding: { top: 16, bottom: 100 }, // Ensure last lines are visible above floating alert
@@ -1072,7 +1135,8 @@ export default function Home({
                 </div>
               </div>
             </div>
-            {isJsonValid && !parsedJsonData ? (
+            {/* Output Panel: only render after editor mounted and (if graph mode) layout is computed */}
+            {(isEditorReady && (currentViewMode !== "visualize" || !isLayoutCalculating)) && (isJsonValid && !parsedJsonData ? (
               <div className="h-full w-full flex flex-col items-center justify-center pl-16 animate-in fade-in zoom-in-95 duration-200">
                 <div className="mb-4 p-4 rounded-full bg-zinc-200 dark:bg-zinc-800/50">
                   <Code2 size={48} className="opacity-50 text-zinc-400" />
@@ -1092,12 +1156,8 @@ export default function Home({
                     currentViewMode !== "visualize" && "hidden",
                   )}
                 >
-                  {isLayoutCalculating ? (
-                    <div className="flex h-full items-center justify-center text-zinc-500 gap-2">
-                      <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
-                      Layouting...
-                    </div>
-                  ) : (
+                  {/* Only mount GraphView once layout is fully computed — prevents blink */}
+                  {!isLayoutCalculating && (
                     <GraphView nodes={graphNodes} edges={graphEdges} />
                   )}
                 </div>
@@ -1161,7 +1221,7 @@ export default function Home({
                   </div>
                 </div>
               </>
-            )}
+            ))}
           </div>
         </main>
       </div>
