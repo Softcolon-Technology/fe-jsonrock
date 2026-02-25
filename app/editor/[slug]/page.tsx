@@ -30,7 +30,7 @@ export default async function EditorSlugPage({ params }: Props) {
           ? ""
           : typeof data.data === "string"
             ? data.data
-            : JSON.stringify(data.data),
+            : JSON.stringify(data.data, null, 2),
         mode: data.mode || "visualize",
         isPrivate: data.isPrivate || false,
         accessType: data.accessType || "editor",
