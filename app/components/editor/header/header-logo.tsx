@@ -8,14 +8,15 @@ interface Props {
   type: ShareType;
   slug: string | null;
   isValid: boolean;
+  viewMode: string;
 }
 
-const HeaderLogo = ({ type, slug, isValid }: Props) => {
+const HeaderLogo = ({ type, slug, isValid, viewMode }: Props) => {
   const onClickNavigation = slug
     ? type === "text"
       ? `/editor/text/${slug}`
-      : `/editor/${slug}`
-    : "/editor";
+      : `/editor/${slug}?view=${viewMode}`
+    : `?view=${viewMode}`;
 
   const handleLogoClick = () => {
     window.location.href = onClickNavigation;

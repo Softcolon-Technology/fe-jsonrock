@@ -6,6 +6,7 @@ interface JsonEditorProps {
     defaultValue?: string;
     remoteValue?: { code: string; nonce: number } | null;
     onChange: (value: string | undefined) => void;
+    onReady?: () => void;
     readOnly?: boolean;
     className?: string;
     options?: editor.IStandaloneEditorConstructionOptions;
@@ -15,7 +16,7 @@ interface JsonEditorProps {
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
-const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onChange, readOnly = false, className, options: customOptions, language = "json" }) => {
+const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onChange, onReady, readOnly = false, className, options: customOptions, language = "json" }) => {
     const { theme } = useTheme();
     const editorRef = React.useRef<any>(null);
     const monacoRef = React.useRef<any>(null);
@@ -50,6 +51,9 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onCh
         // Initial Set
         const currentTheme = theme === 'dark' ? "cracker-dark" : "cracker-light";
         monaco.editor.setTheme(currentTheme);
+
+        // Notify parent that editor is fully ready
+        onReady?.();
     };
 
     // React to theme changes
