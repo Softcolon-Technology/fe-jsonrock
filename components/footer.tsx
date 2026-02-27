@@ -25,7 +25,7 @@ export default function Footer() {
           </p>
 
           {/* Primary Nav */}
-          <div className="w-full flex justify-center border-t border-b border-[#D9D9D9] py-2.5 mb-10">
+          {/* <div className="w-full flex justify-center border-t border-b border-[#D9D9D9] py-2.5 mb-10">
             <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-4">
               {["Documentation", "API Reference", "Community", "Support"].map(
                 (item, index, array) => (
@@ -44,7 +44,7 @@ export default function Footer() {
                 ),
               )}
             </nav>
-          </div>
+          </div> */}
         </div>
       </div>
 

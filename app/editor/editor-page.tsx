@@ -307,7 +307,7 @@ export default function Home({
     }
     if (!slugs.includes(newSlug)) {
       slugs.push(newSlug);
-      Cookies.set("json-cracker-owned", JSON.stringify(slugs), { expires: 30 }); // 30 days
+      Cookies.set("json-cracker-owned", JSON.stringify(slugs), { expires: 30, path: '/' }); // 30 days
     }
     setIsCurrentUserOwner(true);
   };
@@ -655,6 +655,17 @@ export default function Home({
   const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.type !== "application/json" && !file.name.endsWith(".json")) {
+      triggerAlert(
+        "Upload Failed",
+        "Please select a valid .json file.",
+        "error",
+      );
+      e.target.value = ""; // Reset input
+      setIsUploadModalOpen(false);
+      return;
+    }
 
     if (file.size > 2 * 1024 * 1024) {
       triggerAlert(
@@ -1264,7 +1275,7 @@ export default function Home({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".json"
+                  accept="application/json,.json"
                   className="hidden"
                   onChange={handleUploadFile}
                 />

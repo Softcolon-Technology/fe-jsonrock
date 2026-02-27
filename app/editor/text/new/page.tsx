@@ -39,8 +39,8 @@ export default function NewTextDocPage() {
             if (!slugs.includes(data.slug)) {
               slugs.push(data.slug);
               Cookies.set("json-cracker-owned", JSON.stringify(slugs), {
-                expires: 30,
-                path: "/",
+                expires: 30, // 30 days
+                path: '/',
               });
             }
 
