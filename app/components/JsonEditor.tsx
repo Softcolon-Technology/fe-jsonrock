@@ -7,6 +7,7 @@ interface JsonEditorProps {
     remoteValue?: { code: string; nonce: number } | null;
     onChange: (value: string | undefined) => void;
     onReady?: () => void;
+    onValidate?: (markers: any[]) => void;
     readOnly?: boolean;
     className?: string;
     options?: editor.IStandaloneEditorConstructionOptions;
@@ -16,7 +17,7 @@ interface JsonEditorProps {
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
-const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onChange, onReady, readOnly = false, className, options: customOptions, language = "json" }) => {
+const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onChange, onReady, onValidate, readOnly = false, className, options: customOptions, language = "json" }) => {
     const { theme } = useTheme();
     const editorRef = React.useRef<any>(null);
     const monacoRef = React.useRef<any>(null);
@@ -97,6 +98,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onCh
                 language={language}
                 defaultValue={defaultValue}
                 onChange={handleEditorChange}
+                onValidate={onValidate}
                 // Default theme prop is initial only, effect handles updates
                 theme={theme === "dark" ? "vs-dark" : "light"}
                 options={{
@@ -116,6 +118,9 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ defaultValue, remoteValue, onCh
                         horizontalScrollbarSize: 10,
                         verticalHasArrows: false,
                         horizontalHasArrows: false,
+                    },
+                    hover: {
+                        enabled: false,
                     },
                     ...customOptions
                 }}
